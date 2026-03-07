@@ -3,7 +3,7 @@
  */
 
 import { WorkflowService, Workflow, WorkflowNode, WorkflowEdge } from './workflowService';
-import { sendMessage } from '../utils/evolutionAPI';
+import { sendMessage as sendMessageAdapter } from '../utils/sendMessageAdapter';
 import Instance from '../models/Instance';
 import { getIO } from '../socket/socketServer';
 import { GoogleSheetsService } from './googleSheetsService';
@@ -344,8 +344,6 @@ async function executeResponseNode(
       return;
     }
 
-    const instanceName = instance.instanceName;
-
     // Preparar payload baseado no tipo
     // O número precisa estar no formato completo (com DDI) para a Evolution API
     // Se o número não começar com 55, adicionar
@@ -396,8 +394,7 @@ async function executeResponseNode(
         return;
     }
 
-    // Enviar mensagem via Evolution API
-    const response = await sendMessage(instanceName, payload);
+    const response = await sendMessageAdapter(instance, payload);
 
     if (response) {
       console.log(`✅ Resposta enviada com sucesso para ${context.contactPhone}`);

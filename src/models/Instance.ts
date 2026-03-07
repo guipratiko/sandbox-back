@@ -32,6 +32,11 @@ export interface IInstance extends Document {
   instanceId?: string;
   hash?: string;
   status: 'created' | 'connecting' | 'connected' | 'disconnected' | 'error';
+  // WhatsApp Cloud API (integration === 'WHATSAPP-CLOUD')
+  phone_number_id?: string;
+  waba_id?: string;
+  display_phone_number?: string;
+  meta_access_token?: string;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -146,6 +151,10 @@ const InstanceSchema: Schema = new Schema(
       enum: ['created', 'connecting', 'connected', 'disconnected', 'error'],
       default: 'created',
     },
+    phone_number_id: { type: String, default: null },
+    waba_id: { type: String, default: null },
+    display_phone_number: { type: String, default: null },
+    meta_access_token: { type: String, default: null },
   },
   {
     timestamps: true,

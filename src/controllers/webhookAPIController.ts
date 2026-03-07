@@ -1,7 +1,7 @@
 import { Response, NextFunction } from 'express';
 import { InstanceAuthRequest } from '../middleware/instanceAuth';
 import { createValidationError, createNotFoundError, handleControllerError } from '../utils/errorHelpers';
-import { requestEvolutionAPI } from '../utils/evolutionAPI';
+import { sendMessage as sendMessageAdapter } from '../utils/sendMessageAdapter';
 import { MessageService } from '../services/messageService';
 import { CRMColumnService } from '../services/crmColumnService';
 import { ContactService } from '../services/contactService';
@@ -39,16 +39,10 @@ export const sendText = async (
     const instance = await getAndValidateInstance(req.instance!._id);
     const remoteJid = phoneToRemoteJid(phone);
 
-    // Enviar mensagem via Evolution API
-    const evolutionResponse = await requestEvolutionAPI(
-      'POST',
-      `/message/sendText/${encodeURIComponent(instance.instanceName)}`,
-      {
-        number: remoteJid,
-        text: text.trim(),
-      }
-    );
-
+    const evolutionResponse = await sendMessageAdapter(instance, {
+      number: remoteJid,
+      text: text.trim(),
+    });
     const sentMessageId = extractMessageId(evolutionResponse);
     const { contact } = await getOrCreateContactAndColumn(
       req.instance!.userId,
@@ -57,7 +51,6 @@ export const sendText = async (
       phone
     );
 
-    // Criar registro da mensagem no PostgreSQL
     const now = new Date();
     const message = await MessageService.createMessage({
       userId: req.instance!.userId,
@@ -111,20 +104,11 @@ export const sendImage = async (
     const instance = await getAndValidateInstance(req.instance!._id);
     const remoteJid = phoneToRemoteJid(phone);
 
-    // Enviar imagem via Evolution API
-    const evolutionResponse = await requestEvolutionAPI(
-      'POST',
-      `/message/sendMedia/${encodeURIComponent(instance.instanceName)}`,
-      {
-        number: remoteJid,
-        mediatype: 'image',
-        mimetype: 'image/jpeg',
-        caption: caption || '',
-        media: image, // URL pública
-        fileName: `image-${Date.now()}.jpg`,
-      }
-    );
-
+    const evolutionResponse = await sendMessageAdapter(instance, {
+      number: remoteJid,
+      image,
+      caption: caption || '',
+    });
     const sentMessageId = extractMessageId(evolutionResponse);
     const { contact } = await getOrCreateContactAndColumn(
       req.instance!.userId,
@@ -188,20 +172,11 @@ export const sendVideo = async (
     const instance = await getAndValidateInstance(req.instance!._id);
     const remoteJid = phoneToRemoteJid(phone);
 
-    // Enviar vídeo via Evolution API
-    const evolutionResponse = await requestEvolutionAPI(
-      'POST',
-      `/message/sendMedia/${encodeURIComponent(instance.instanceName)}`,
-      {
-        number: remoteJid,
-        mediatype: 'video',
-        mimetype: 'video/mp4',
-        caption: caption || '',
-        media: video, // URL pública
-        fileName: `video-${Date.now()}.mp4`,
-      }
-    );
-
+    const evolutionResponse = await sendMessageAdapter(instance, {
+      number: remoteJid,
+      video,
+      caption: caption || '',
+    });
     const sentMessageId = extractMessageId(evolutionResponse);
     const { contact } = await getOrCreateContactAndColumn(
       req.instance!.userId,
@@ -272,19 +247,12 @@ export const sendFile = async (
     const fileMimeType = mimetype || 'application/octet-stream';
     const { mediatype, messageType } = detectMediaType(fileMimeType);
 
-    // Enviar arquivo via Evolution API
-    const evolutionResponse = await requestEvolutionAPI(
-      'POST',
-      `/message/sendMedia/${encodeURIComponent(instance.instanceName)}`,
-      {
-        number: remoteJid,
-        mediatype,
-        mimetype: fileMimeType,
-        media: file, // URL pública
-        fileName: filename,
-      }
-    );
-
+    const payload: { number: string; image?: string; video?: string; audio?: string; document?: string; caption?: string; fileName?: string } = { number: remoteJid, fileName: filename };
+    if (mediatype === 'image') payload.image = file;
+    else if (mediatype === 'video') payload.video = file;
+    else if (mediatype === 'audio') payload.audio = file;
+    else payload.document = file;
+    const evolutionResponse = await sendMessageAdapter(instance, payload);
     const sentMessageId = extractMessageId(evolutionResponse);
     const { contact } = await getOrCreateContactAndColumn(
       req.instance!.userId,
@@ -348,16 +316,10 @@ export const sendAudio = async (
     const instance = await getAndValidateInstance(req.instance!._id);
     const remoteJid = phoneToRemoteJid(phone);
 
-    // Enviar áudio via Evolution API
-    const evolutionResponse = await requestEvolutionAPI(
-      'POST',
-      `/message/sendWhatsAppAudio/${encodeURIComponent(instance.instanceName)}`,
-      {
-        number: remoteJid,
-        audio: audio, // URL pública
-      }
-    );
-
+    const evolutionResponse = await sendMessageAdapter(instance, {
+      number: remoteJid,
+      audio,
+    });
     const sentMessageId = extractMessageId(evolutionResponse);
     const { contact } = await getOrCreateContactAndColumn(
       req.instance!.userId,

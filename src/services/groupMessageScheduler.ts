@@ -1,7 +1,7 @@
 import { GroupMessageService } from './groupMessageService';
 import Instance from '../models/Instance';
 import mongoose from 'mongoose';
-import { sendMessage } from '../utils/evolutionAPI';
+import { sendMessage as sendMessageAdapter } from '../utils/sendMessageAdapter';
 import { GroupMessageType } from './groupMessageService';
 
 /**
@@ -35,7 +35,7 @@ export function startGroupMessageScheduler(): void {
           await GroupMessageService.updateScheduledStatus(msg.id, 'processing');
 
           // Obter instanceName a partir de instanceId + userId
-          const instanceName = await resolveInstanceName(
+          const instance = await resolveInstance(
             msg.instanceId,
             msg.userId
           );
@@ -51,7 +51,7 @@ export function startGroupMessageScheduler(): void {
 
           for (const groupId of groupIds) {
             await sendGroupMessageByType(
-              instanceName,
+              instance,
               groupId,
               msg.messageType as GroupMessageType,
               msg.contentJson
@@ -90,10 +90,10 @@ export function startGroupMessageScheduler(): void {
   }, intervalMs);
 }
 
-async function resolveInstanceName(
+async function resolveInstance(
   instanceId: string,
   userId: string
-): Promise<string> {
+): Promise<{ instanceName: string; integration?: string; phone_number_id?: string | null }> {
   let userObjectId: mongoose.Types.ObjectId;
   let instanceObjectId: mongoose.Types.ObjectId;
 
@@ -113,7 +113,7 @@ async function resolveInstanceName(
     throw new Error('Instância não encontrada para mensagem agendada');
   }
 
-  return (instance as any).instanceName as string;
+  return instance as any;
 }
 
 /**
@@ -121,7 +121,7 @@ async function resolveInstanceName(
  * Idealmente, no futuro, isso pode ser extraído para um helper compartilhado.
  */
 async function sendGroupMessageByType(
-  instanceName: string,
+  instance: { instanceName: string; integration?: string; phone_number_id?: string | null },
   groupId: string,
   messageType: GroupMessageType,
   contentJson: any
@@ -132,7 +132,7 @@ async function sendGroupMessageByType(
       if (!text || String(text).trim().length === 0) {
         throw new Error('Texto da mensagem é obrigatório');
       }
-      await sendMessage(instanceName, {
+      await sendMessageAdapter(instance, {
         number: groupId,
         text: String(text),
       });
@@ -149,24 +149,24 @@ async function sendGroupMessageByType(
       }
 
       if (mediaType === 'image') {
-        await sendMessage(instanceName, {
+        await sendMessageAdapter(instance, {
           number: groupId,
           image: mediaUrl,
           caption: caption || undefined,
         });
       } else if (mediaType === 'video') {
-        await sendMessage(instanceName, {
+        await sendMessageAdapter(instance, {
           number: groupId,
           video: mediaUrl,
           caption: caption || undefined,
         });
       } else if (mediaType === 'audio') {
-        await sendMessage(instanceName, {
+        await sendMessageAdapter(instance, {
           number: groupId,
           audio: mediaUrl,
         });
       } else {
-        await sendMessage(instanceName, {
+        await sendMessageAdapter(instance, {
           number: groupId,
           document: mediaUrl,
           fileName: fileName || 'arquivo',
@@ -175,6 +175,9 @@ async function sendGroupMessageByType(
       break;
     }
     case 'poll': {
+      if (instance.integration === 'WHATSAPP-CLOUD') {
+        throw new Error('Enquete não suportada para API Oficial');
+      }
       const name = contentJson?.name;
       const values: string[] = contentJson?.values || [];
       const selectableCount = contentJson?.selectableCount ?? 1;
@@ -190,7 +193,7 @@ async function sendGroupMessageByType(
       const { requestEvolutionAPI } = await import('../utils/evolutionAPI');
       await requestEvolutionAPI(
         'POST',
-        `/message/sendPoll/${encodeURIComponent(instanceName)}`,
+        `/message/sendPoll/${encodeURIComponent(instance.instanceName)}`,
         {
           number: groupId,
           name: String(name),
@@ -201,6 +204,9 @@ async function sendGroupMessageByType(
       break;
     }
     case 'contact': {
+      if (instance.integration === 'WHATSAPP-CLOUD') {
+        throw new Error('Envio de contato não suportado para API Oficial');
+      }
       const contacts = contentJson?.contact;
       if (!Array.isArray(contacts) || contacts.length === 0) {
         throw new Error('Pelo menos um contato é obrigatório');
@@ -209,7 +215,7 @@ async function sendGroupMessageByType(
       const { requestEvolutionAPI } = await import('../utils/evolutionAPI');
       await requestEvolutionAPI(
         'POST',
-        `/message/sendContact/${encodeURIComponent(instanceName)}`,
+        `/message/sendContact/${encodeURIComponent(instance.instanceName)}`,
         {
           number: groupId,
           contact: contacts,
@@ -218,6 +224,9 @@ async function sendGroupMessageByType(
       break;
     }
     case 'location': {
+      if (instance.integration === 'WHATSAPP-CLOUD') {
+        throw new Error('Envio de localização não suportado para API Oficial');
+      }
       const name = contentJson?.name;
       const address = contentJson?.address;
       const latitude = contentJson?.latitude;
@@ -235,7 +244,7 @@ async function sendGroupMessageByType(
       const { requestEvolutionAPI } = await import('../utils/evolutionAPI');
       await requestEvolutionAPI(
         'POST',
-        `/message/sendLocation/${encodeURIComponent(instanceName)}`,
+        `/message/sendLocation/${encodeURIComponent(instance.instanceName)}`,
         {
           number: groupId,
           name: name || '',
@@ -251,16 +260,10 @@ async function sendGroupMessageByType(
       if (!audioUrl) {
         throw new Error('URL do áudio é obrigatória');
       }
-
-      const { requestEvolutionAPI } = await import('../utils/evolutionAPI');
-      await requestEvolutionAPI(
-        'POST',
-        `/message/sendWhatsAppAudio/${encodeURIComponent(instanceName)}`,
-        {
-          number: groupId,
-          audio: audioUrl,
-        }
-      );
+      await sendMessageAdapter(instance, {
+        number: groupId,
+        audio: audioUrl,
+      });
       break;
     }
     default:

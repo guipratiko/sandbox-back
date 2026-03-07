@@ -2,7 +2,7 @@ import { Response, NextFunction } from 'express';
 import multer from 'multer';
 import Instance from '../models/Instance'; // Ainda no MongoDB
 import { AuthRequest } from '../middleware/auth';
-import { requestEvolutionAPI } from '../utils/evolutionAPI';
+import { sendMessage as sendMessageAdapter } from '../utils/sendMessageAdapter';
 import { uploadFileToService, detectMediaType } from '../utils/mediaService';
 import { createValidationError, createNotFoundError, handleControllerError } from '../utils/errorHelpers';
 import { ContactService } from '../services/contactService';
@@ -163,21 +163,15 @@ export const sendMedia = async (
       return next(createValidationError('Erro ao fazer upload do arquivo'));
     }
 
-    // Enviar mídia via Evolution API
-    const evolutionResponse = await requestEvolutionAPI(
-      'POST',
-      `/message/sendMedia/${encodeURIComponent(instance.instanceName)}`,
-      {
-        number: contact.remoteJid,
-        mediatype,
-        mimetype: file.mimetype,
-        caption: caption || '',
-        media: uploadResult.fullUrl,
-        fileName: fileName,
-      }
-    );
-
-    // Extrair messageId da resposta
+    const payload: { number: string; caption?: string; image?: string; video?: string; audio?: string; document?: string; fileName?: string } = {
+      number: contact.remoteJid,
+      caption: caption || '',
+    };
+    if (mediatype === 'image') payload.image = uploadResult.fullUrl;
+    else if (mediatype === 'video') payload.video = uploadResult.fullUrl;
+    else if (mediatype === 'audio') payload.audio = uploadResult.fullUrl;
+    else { payload.document = uploadResult.fullUrl; payload.fileName = fileName; }
+    const evolutionResponse = await sendMessageAdapter(instance, payload);
     const sentMessageId = extractMessageId(evolutionResponse);
 
     // Criar registro da mensagem no PostgreSQL
@@ -281,17 +275,10 @@ export const sendAudio = async (
       return next(createValidationError('Erro ao fazer upload do áudio'));
     }
 
-    // Enviar áudio via Evolution API
-    const evolutionResponse = await requestEvolutionAPI(
-      'POST',
-      `/message/sendWhatsAppAudio/${encodeURIComponent(instance.instanceName)}`,
-      {
-        number: contact.remoteJid,
-        audio: uploadResult.fullUrl,
-      }
-    );
-
-    // Extrair messageId da resposta
+    const evolutionResponse = await sendMessageAdapter(instance, {
+      number: contact.remoteJid,
+      audio: uploadResult.fullUrl,
+    });
     const sentMessageId = extractMessageId(evolutionResponse);
 
     // Criar registro da mensagem no PostgreSQL
@@ -378,17 +365,10 @@ export const sendMessage = async (
       return next(createNotFoundError('Instância'));
     }
 
-    // Enviar mensagem via Evolution API
-    const evolutionResponse = await requestEvolutionAPI(
-      'POST',
-      `/message/sendText/${encodeURIComponent(instance.instanceName)}`,
-      {
-        number: contact.remoteJid,
-        text: text.trim(),
-      }
-    );
-
-    // Extrair messageId da resposta
+    const evolutionResponse = await sendMessageAdapter(instance, {
+      number: contact.remoteJid,
+      text: text.trim(),
+    });
     const sentMessageId = extractMessageId(evolutionResponse);
 
     // Criar registro da mensagem no PostgreSQL

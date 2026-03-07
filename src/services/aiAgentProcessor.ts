@@ -12,7 +12,7 @@ import { redisClient } from '../config/databases';
 import { OPENAI_CONFIG, TRANSCRIPTION_CONFIG, SERVER_CONFIG, GOOGLE_CONFIG } from '../config/constants';
 import { callOpenAI } from './openaiService';
 import { callOpenAIWithTools, type ToolDefinition } from './openaiAgentTools';
-import { sendMessage } from '../utils/evolutionAPI';
+import { sendMessage as sendMessageAdapter } from '../utils/sendMessageAdapter';
 import Instance from '../models/Instance';
 import { requestEvolutionAPI } from '../utils/evolutionAPI';
 import { normalizePhone } from '../utils/numberNormalizer';
@@ -504,6 +504,9 @@ async function executeAgentTool(
     const used = parseInt((await redisClient.get(key)) || '0', 10);
     if (used >= location.maxUsesPerContact) return `Limite de usos (${location.maxUsesPerContact}) já atingido para esta localização.`;
     await redisClient.incr(key);
+    if (instance.integration === 'WHATSAPP-CLOUD') {
+      return 'Envio de localização ainda não suportado para API Oficial.';
+    }
     await requestEvolutionAPI('POST', `/message/sendLocation/${encodeURIComponent(instance.instanceName)}`, {
       number: numberJid,
       name: location.name || '',
@@ -526,36 +529,20 @@ async function executeAgentTool(
     if (used >= media.maxUsesPerContact) return `Limite de usos (${media.maxUsesPerContact}) já atingido para esta mídia.`;
     await redisClient.incr(key);
     const caption = args.caption != null ? String(args.caption) : media.caption;
-    const basePayload = { number: numberJid, media: media.url };
+    const payload: { number: string; image?: string; video?: string; audio?: string; document?: string; caption?: string; fileName?: string } = { number: numberJid, caption: caption || undefined };
     if (media.mediaType === 'image') {
-      await requestEvolutionAPI('POST', `/message/sendMedia/${encodeURIComponent(instance.instanceName)}`, {
-        ...basePayload,
-        mediatype: 'image',
-        mimetype: 'image/jpeg',
-        caption: caption || '',
-        fileName: `image-${media.id}.jpg`,
-      });
+      payload.image = media.url;
+      payload.fileName = `image-${media.id}.jpg`;
     } else if (media.mediaType === 'video') {
-      await requestEvolutionAPI('POST', `/message/sendMedia/${encodeURIComponent(instance.instanceName)}`, {
-        ...basePayload,
-        mediatype: 'video',
-        mimetype: 'video/mp4',
-        caption: caption || '',
-        fileName: `video-${media.id}.mp4`,
-      });
+      payload.video = media.url;
+      payload.fileName = `video-${media.id}.mp4`;
     } else if (media.mediaType === 'audio') {
-      await requestEvolutionAPI('POST', `/message/sendWhatsAppAudio/${encodeURIComponent(instance.instanceName)}`, {
-        number: numberJid,
-        audio: media.url,
-      });
+      payload.audio = media.url;
     } else {
-      await requestEvolutionAPI('POST', `/message/sendMedia/${encodeURIComponent(instance.instanceName)}`, {
-        ...basePayload,
-        mediatype: 'document',
-        mimetype: 'application/octet-stream',
-        fileName: `arquivo-${media.id}`,
-      });
+      payload.document = media.url;
+      payload.fileName = `arquivo-${media.id}`;
     }
+    await sendMessageAdapter(instance, payload);
     return 'Mídia enviada com sucesso.';
   }
 
@@ -780,7 +767,7 @@ export async function processBufferedMessages(
       const wordCount = segment.split(/\s+/).filter(Boolean).length;
       const typingDelay = wordCount * 200;
 
-      await sendMessage(instance.instanceName, {
+      await sendMessageAdapter(instance, {
         number: numberJid,
         text: segment,
         delay: typingDelay,

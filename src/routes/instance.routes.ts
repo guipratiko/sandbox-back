@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import {
   createInstance,
+  createOfficialInstance,
   getInstances,
   getInstance,
   updateInstanceSettings,
@@ -14,6 +15,7 @@ const router = Router();
 // Todas as rotas requerem autenticação e plano premium
 router.use(protect, requirePremium);
 
+router.post('/official', createOfficialInstance);
 router.post('/', validateCreateInstance, createInstance);
 router.get('/', getInstances);
 router.get('/:id', validateInstanceId, getInstance);

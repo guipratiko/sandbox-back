@@ -4,7 +4,8 @@
  */
 
 import { pgPool } from '../config/databases';
-import { sendMessage } from '../utils/evolutionAPI';
+import Instance from '../models/Instance';
+import { sendMessage as sendMessageAdapter } from '../utils/sendMessageAdapter';
 import { normalizePhone } from '../utils/numberNormalizer';
 
 export interface GroupAutoMessage {
@@ -272,9 +273,13 @@ export class GroupAutoMessageService {
     participantName?: string | null,
     groupName?: string | null
   ): Promise<void> {
-    // Declarar phoneForSending no escopo da função para estar disponível no catch
     let phoneForSending: string = participantPhone.replace(/\D/g, '');
-    
+
+    const instance = await Instance.findOne({ instanceName }).lean();
+    if (!instance) {
+      throw new Error('Instância não encontrada para mensagem automática');
+    }
+
     try {
       // Aplicar delay se configurado
       if (message.delaySeconds > 0) {
@@ -309,8 +314,7 @@ export class GroupAutoMessageService {
       }
       
 
-      // Enviar mensagem individual (não no grupo)
-      await sendMessage(instanceName, {
+      await sendMessageAdapter(instance as any, {
         number: phoneForSending,
         text: processedText,
       });

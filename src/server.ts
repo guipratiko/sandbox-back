@@ -13,6 +13,7 @@ import cors from 'cors';
 import { connectAllDatabases } from './config/databases';
 import routes from './routes';
 import webhookRoutes from './routes/webhook.routes';
+import whatsappOfficialWebhookRoutes from './routes/whatsappOfficialWebhook.routes';
 import webhookAPIRoutes from './routes/webhookAPIRoutes';
 import { instagramWebhookProxy } from './middleware/instagramWebhookProxy';
 import { errorHandler, notFoundHandler } from './middleware/errorHandler';
@@ -72,22 +73,23 @@ app.use(cors({
   },
   credentials: true,
 }));
+
+// Webhook WhatsApp Oficial (Meta) - ANTES de express.json() para ter body bruto na verificação de assinatura
+app.use('/webhook/whatsapp-official', whatsappOfficialWebhookRoutes);
+console.log('✅ Webhook WhatsApp Oficial registrado: /webhook/whatsapp-official');
+
 // Aumentar limite de payload para suportar imagens em base64 comprimidas (10MB)
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
-
-// Middleware de debug para webhooks removido (reduzir verbosidade)
 
 // Conectar a todos os bancos de dados (MongoDB, PostgreSQL, Redis)
 connectAllDatabases();
 
 // Webhook do Instagram (público - Meta chama diretamente)
-// IMPORTANTE: Deve vir ANTES de /webhook para não ser capturado pelo router genérico
 app.use('/webhook/instagram', instagramWebhookProxy);
 console.log('✅ Webhook do Instagram registrado: /webhook/instagram');
 
-// Rotas de Webhook (devem vir antes de /api pois são chamadas diretamente pela Evolution API)
-// IMPORTANTE: Esta rota deve vir DEPOIS do webhook do Instagram
+// Rotas de Webhook Evolution API
 app.use('/webhook', webhookRoutes);
 console.log('✅ Rotas de webhook registradas: /webhook/api/:instanceName');
 

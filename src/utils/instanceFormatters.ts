@@ -10,6 +10,12 @@ export const formatInstanceResponse = (instance: InstanceLean) => {
     return value === true;
   });
 
+  const displayPhone = (instance as any).display_phone_number;
+  const connectionLink =
+    instance.integration === 'WHATSAPP-CLOUD' && displayPhone
+      ? `https://wa.me/${displayPhone.replace(/\D/g, '')}`
+      : instance.webhook?.url || '';
+
   return {
     id: instance._id?.toString() || '',
     name: instance.name || '',
@@ -20,6 +26,9 @@ export const formatInstanceResponse = (instance: InstanceLean) => {
     qrcodeBase64: instance.qrcodeBase64 || null,
     status: instance.status || 'created',
     integration: instance.integration || 'WHATSAPP-BAILEYS',
+    phone_number_id: (instance as any).phone_number_id ?? null,
+    display_phone_number: displayPhone ?? null,
+    connectionLink,
     webhook: {
       url: instance.webhook?.url || '',
       events: activeEvents,

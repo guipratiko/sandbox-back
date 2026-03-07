@@ -1,12 +1,13 @@
 import { Response, NextFunction } from 'express';
 import mongoose from 'mongoose';
+import axios from 'axios';
 import Instance from '../models/Instance';
 import { generateInstanceName } from '../utils/instanceGenerator';
 import { requestEvolutionAPI } from '../utils/evolutionAPI';
 import { getIO } from '../socket/socketServer';
 import { AuthRequest } from '../middleware/auth';
 import { validateAndConvertUserId } from '../utils/helpers';
-import { WEBHOOK_CONFIG, EVOLUTION_CONFIG, getPlanLimits } from '../config/constants';
+import { WEBHOOK_CONFIG, EVOLUTION_CONFIG, getPlanLimits, META_OAUTH_CONFIG } from '../config/constants';
 import { createValidationError, createNotFoundError, createForbiddenError, handleControllerError } from '../utils/errorHelpers';
 import User from '../models/User';
 import { formatInstanceResponse } from '../utils/instanceFormatters';
@@ -31,6 +32,14 @@ interface UpdateSettingsBody {
   syncFullHistory?: boolean;
 }
 
+interface CreateOfficialInstanceBody {
+  name: string;
+  code?: string;
+  redirect_uri?: string;
+  waba_id: string;
+  phone_number_id: string;
+}
+
 // Tipo para instância do MongoDB (lean) - usando Record para flexibilidade
 export type InstanceLean = Record<string, any> & {
   _id: mongoose.Types.ObjectId;
@@ -52,6 +61,9 @@ export type InstanceLean = Record<string, any> & {
   readMessages?: boolean;
   readStatus?: boolean;
   syncFullHistory?: boolean;
+  phone_number_id?: string | null;
+  waba_id?: string | null;
+  display_phone_number?: string | null;
   createdAt?: Date;
   updatedAt?: Date;
 };
@@ -220,6 +232,143 @@ export const createInstance = async (
 };
 
 /**
+ * Cria uma instância WhatsApp Oficial (Cloud API / Meta)
+ */
+export const createOfficialInstance = async (
+  req: AuthRequest,
+  res: Response,
+  next: NextFunction
+): Promise<void> => {
+  try {
+    const userId = req.user?.id;
+    const userObjectId = validateAndConvertUserId(userId);
+    const { name, code, redirect_uri, waba_id, phone_number_id }: CreateOfficialInstanceBody = req.body;
+
+    if (!name || name.trim().length < 3) {
+      return next(createValidationError('Nome deve ter no mínimo 3 caracteres'));
+    }
+    if (!waba_id || !phone_number_id) {
+      return next(createValidationError('waba_id e phone_number_id são obrigatórios'));
+    }
+
+    const user = await User.findById(userId).select('premiumPlan');
+    if (!user) return next(createNotFoundError('Usuário'));
+    const limits = getPlanLimits(user.premiumPlan || 'free');
+    const currentCount = await Instance.countDocuments({ userId: userObjectId });
+    if (currentCount >= limits.maxWhatsApp) {
+      return next(
+        createForbiddenError(
+          `Limite do seu plano atingido (${limits.maxWhatsApp} conexão(ões) WhatsApp). Faça upgrade para adicionar mais.`
+        )
+      );
+    }
+
+    let accessToken = META_OAUTH_CONFIG.SYSTEM_USER_TOKEN;
+    if (code && redirect_uri && META_OAUTH_CONFIG.APP_ID && META_OAUTH_CONFIG.APP_SECRET) {
+      try {
+        const tokenRes = await axios.get<{ access_token: string }>(
+          'https://graph.facebook.com/v21.0/oauth/access_token',
+          {
+            params: {
+              client_id: META_OAUTH_CONFIG.APP_ID,
+              redirect_uri,
+              client_secret: META_OAUTH_CONFIG.APP_SECRET,
+              code,
+            },
+            timeout: 10000,
+          }
+        );
+        if (tokenRes.data?.access_token) accessToken = tokenRes.data.access_token;
+      } catch (err) {
+        console.error('Erro ao trocar code por token Meta:', err);
+      }
+    }
+
+    let display_phone_number: string | null = null;
+    if (accessToken) {
+      try {
+        const phoneRes = await axios.get<{ display_phone_number?: string }>(
+          `https://graph.facebook.com/v21.0/${phone_number_id}`,
+          {
+            params: { fields: 'display_phone_number', access_token: accessToken },
+            timeout: 10000,
+          }
+        );
+        display_phone_number = phoneRes.data?.display_phone_number || null;
+      } catch (err) {
+        console.warn('Não foi possível obter display_phone_number da Meta:', err);
+      }
+    }
+
+    let instanceName = generateInstanceName();
+    let existing = await Instance.findOne({ instanceName });
+    while (existing) {
+      instanceName = generateInstanceName();
+      existing = await Instance.findOne({ instanceName });
+    }
+
+    const webhookUrl =
+      META_OAUTH_CONFIG.WEBHOOK_CALLBACK_URL ||
+      (process.env.BACKEND_URL ? `${process.env.BACKEND_URL}/webhook/whatsapp-official` : '');
+
+    const webhookEventsObj: Record<string, boolean> = {};
+    WEBHOOK_CONFIG.EVENTS.forEach((e) => {
+      webhookEventsObj[e] = true;
+    });
+
+    const instance = new Instance({
+      instanceName,
+      name: name.trim(),
+      userId: userObjectId,
+      qrcode: false,
+      integration: 'WHATSAPP-CLOUD',
+      rejectCall: false,
+      groupsIgnore: false,
+      alwaysOnline: false,
+      readMessages: false,
+      readStatus: false,
+      syncFullHistory: true,
+      webhook: {
+        url: webhookUrl,
+        byEvents: false,
+        base64: false,
+        headers: { 'Content-Type': 'application/json' },
+        events: webhookEventsObj,
+      },
+      qrcodeBase64: null,
+      instanceId: phone_number_id,
+      status: 'connected',
+      phone_number_id,
+      waba_id,
+      display_phone_number: display_phone_number || undefined,
+      meta_access_token: accessToken !== META_OAUTH_CONFIG.SYSTEM_USER_TOKEN ? accessToken : undefined,
+    });
+
+    await instance.save();
+
+    try {
+      const io = getIO();
+      if (userId) {
+        io.to(userId.toString()).emit('instance-status-updated', {
+          instanceId: instance._id.toString(),
+          status: 'connected',
+        });
+      }
+    } catch (socketError) {
+      console.error('Erro ao emitir evento WebSocket:', socketError);
+    }
+
+    res.status(201).json({
+      status: 'success',
+      message: 'Instância oficial criada com sucesso',
+      instance: formatInstanceResponse(instance as unknown as InstanceLean),
+    });
+  } catch (error: unknown) {
+    return next(handleControllerError(error, 'Erro ao criar instância oficial'));
+  }
+};
+
+/**
  * Lista todas as instâncias do usuário
  */
 export const getInstances = async (
@@ -301,28 +450,26 @@ export const updateInstanceSettings = async (
       return next(createNotFoundError('Instância'));
     }
 
-    // Atualizar settings na Evolution API
-    const settingsPath = EVOLUTION_CONFIG.SETTINGS_PATH.replace(
-      '{instance}',
-      encodeURIComponent(instance.instanceName)
-    );
-
-    try {
-      // Tentar POST primeiro, se falhar, tentar PUT
+    if (instance.integration !== 'WHATSAPP-CLOUD') {
+      const settingsPath = EVOLUTION_CONFIG.SETTINGS_PATH.replace(
+        '{instance}',
+        encodeURIComponent(instance.instanceName)
+      );
       try {
-        await requestEvolutionAPI('POST', settingsPath, settings);
-      } catch (postError: unknown) {
-        const errorMessage = postError instanceof Error ? postError.message : '';
-        if (errorMessage.includes('405')) {
-          await requestEvolutionAPI('PUT', settingsPath, settings);
-        } else {
-          throw postError;
+        try {
+          await requestEvolutionAPI('POST', settingsPath, settings);
+        } catch (postError: unknown) {
+          const errorMessage = postError instanceof Error ? postError.message : '';
+          if (errorMessage.includes('405')) {
+            await requestEvolutionAPI('PUT', settingsPath, settings);
+          } else {
+            throw postError;
+          }
         }
+      } catch (apiError: unknown) {
+        const errorMessage = apiError instanceof Error ? apiError.message : 'Erro desconhecido';
+        console.error('Erro ao atualizar settings na Evolution API:', errorMessage);
       }
-    } catch (apiError: unknown) {
-      // Log do erro mas continua atualizando no banco
-      const errorMessage = apiError instanceof Error ? apiError.message : 'Erro desconhecido';
-      console.error('Erro ao atualizar settings na Evolution API:', errorMessage);
     }
 
     // Atualizar no banco de dados
@@ -450,14 +597,15 @@ export const deleteInstance = async (
       // Continuar mesmo se houver erro no Redis
     }
 
-    // 3. Deletar instância na Evolution API
-    try {
-      await requestEvolutionAPI('DELETE', `/instance/delete/${encodeURIComponent(instance.instanceName)}`);
-      console.log(`✅ Instância deletada na Evolution API`);
-    } catch (apiError: unknown) {
-      // Log do erro mas continua deletando do banco
-      const errorMessage = apiError instanceof Error ? apiError.message : 'Erro desconhecido';
-      console.error('⚠️  Erro ao deletar instância na Evolution API:', errorMessage);
+    // 3. Deletar instância na Evolution API (apenas para instâncias não-oficiais)
+    if (instance.integration !== 'WHATSAPP-CLOUD') {
+      try {
+        await requestEvolutionAPI('DELETE', `/instance/delete/${encodeURIComponent(instance.instanceName)}`);
+        console.log(`✅ Instância deletada na Evolution API`);
+      } catch (apiError: unknown) {
+        const errorMessage = apiError instanceof Error ? apiError.message : 'Erro desconhecido';
+        console.error('⚠️  Erro ao deletar instância na Evolution API:', errorMessage);
+      }
     }
 
     // 4. Deletar instância do MongoDB (por último)

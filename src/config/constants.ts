@@ -118,6 +118,23 @@ export const APPLE_CONFIG = {
   SHARED_SECRET: process.env.APPLE_SHARED_SECRET || '', // Opcional para validação de receipts
 };
 
+// Meta / WhatsApp Cloud API (API Oficial)
+export const META_OAUTH_CONFIG = {
+  APP_ID: process.env.META_APP_ID || '',
+  APP_SECRET: process.env.META_APP_SECRET || '',
+  EMBEDDED_SIGNUP_CONFIG_ID: process.env.META_EMBEDDED_SIGNUP_CONFIG_ID || '',
+  SYSTEM_USER_TOKEN: process.env.META_SYSTEM_USER_TOKEN || '',
+  WHATSAPP_VERIFY_TOKEN: process.env.WHATSAPP_VERIFY_TOKEN || '',
+  WEBHOOK_CALLBACK_URL:
+    process.env.META_WEBHOOK_CALLBACK_URL ||
+    (process.env.BACKEND_URL ? `${process.env.BACKEND_URL}/webhook/whatsapp-official` : ''),
+};
+
+export const OFFICIAL_API_CLERKY_URL =
+  process.env.OFFICIAL_API_CLERKY_URL || 'http://localhost:4338';
+
+export const OFFICIAL_API_CLERKY_API_KEY = process.env.OFFICIAL_API_CLERKY_API_KEY || '';
+
 // Limites por plano premium (instâncias WhatsApp e Instagram)
 export const PREMIUM_PLAN_LIMITS: Record<string, { maxWhatsApp: number; maxInstagram: number }> = {
   free: { maxWhatsApp: 0, maxInstagram: 0 },

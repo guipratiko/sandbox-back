@@ -7,7 +7,7 @@ import {
   GroupMessageTargetType,
 } from '../services/groupMessageService';
 import Instance from '../models/Instance';
-import { sendMessage } from '../utils/evolutionAPI';
+import { sendMessage as sendMessageAdapter } from '../utils/sendMessageAdapter';
 import {
   createValidationError,
   createNotFoundError,
@@ -17,12 +17,12 @@ import { uploadFileToService } from '../utils/mediaService';
 import multer from 'multer';
 
 /**
- * Helper: validar e obter instanceName a partir de instanceId + userId
+ * Helper: validar e obter instância a partir de instanceId + userId
  */
-async function getInstanceNameForUser(
+async function getInstanceForUser(
   instanceId: string,
   userId?: string
-): Promise<string> {
+): Promise<{ instanceName: string; integration?: string; phone_number_id?: string | null }> {
   if (!userId) {
     throw createValidationError('Usuário não autenticado');
   }
@@ -46,7 +46,7 @@ async function getInstanceNameForUser(
     throw createNotFoundError('Instância');
   }
 
-  return (instance as any).instanceName as string;
+  return instance as any;
 }
 
 /**
@@ -315,8 +315,7 @@ export const sendGroupMessageNow = async (
       }
     }
 
-    // Obter instanceName para usar na Evolution API
-    const instanceName = await getInstanceNameForUser(instanceId, userId);
+    const instance = await getInstanceForUser(instanceId, userId);
 
     // Determinar grupos de destino
     let targetGroupIds: string[] = [];
@@ -344,12 +343,12 @@ export const sendGroupMessageNow = async (
     }> = [];
 
     console.log(`📤 Iniciando envio de mensagens para ${targetGroupIds.length} grupo(s)`);
-    console.log(`📋 Tipo: ${messageType}, Instância: ${instanceName}`);
+    console.log(`📋 Tipo: ${messageType}, Instância: ${instance.instanceName}`);
 
     for (const groupId of targetGroupIds) {
       try {
         console.log(`📨 Enviando mensagem para grupo: ${groupId}`);
-        await sendGroupMessageByType(instanceName, groupId, messageType, contentJson);
+        await sendGroupMessageByType(instance, groupId, messageType, contentJson);
         console.log(`✅ Mensagem enviada com sucesso para grupo: ${groupId}`);
         results.push({ groupId, success: true });
       } catch (error: any) {
@@ -613,15 +612,14 @@ export const uploadGroupFile = async (
  * mapeando os diferentes tipos para a Evolution API.
  */
 async function sendGroupMessageByType(
-  instanceName: string,
+  instance: { instanceName: string; integration?: string; phone_number_id?: string | null },
   groupId: string,
   messageType: GroupMessageType,
   contentJson: any
 ): Promise<void> {
   console.log(`🔍 sendGroupMessageByType - Tipo: ${messageType}, Grupo: ${groupId}`);
   console.log(`📦 ContentJson:`, JSON.stringify(contentJson, null, 2));
-  
-  // Tipos suportados pela Evolution API, com base nos exemplos fornecidos
+
   switch (messageType) {
     case 'text': {
       const text = contentJson?.text;
@@ -630,7 +628,7 @@ async function sendGroupMessageByType(
       }
       const delaySeconds = contentJson?.delay;
       const delayMs = delaySeconds ? delaySeconds * 1000 : undefined;
-      await sendMessage(instanceName, {
+      await sendMessageAdapter(instance, {
         number: groupId,
         text: String(text),
         ...(delayMs && { delay: delayMs }),
@@ -648,45 +646,44 @@ async function sendGroupMessageByType(
         throw new Error('URL da mídia é obrigatória');
       }
 
-      // Para manter compatibilidade com utils/evolutionAPI, usamos sendMessage para
-      // image/video/audio/document, preenchendo os campos corretos.
       const delaySeconds = contentJson?.delay;
       const delayMs = delaySeconds ? delaySeconds * 1000 : undefined;
-      
+
       if (mediaType === 'image') {
-        await sendMessage(instanceName, {
+        await sendMessageAdapter(instance, {
           number: groupId,
           image: mediaUrl,
           caption: caption || undefined,
           ...(delayMs && { delay: delayMs }),
         });
       } else if (mediaType === 'video') {
-        await sendMessage(instanceName, {
+        await sendMessageAdapter(instance, {
           number: groupId,
           video: mediaUrl,
           caption: caption || undefined,
           ...(delayMs && { delay: delayMs }),
         });
       } else if (mediaType === 'audio') {
-        await sendMessage(instanceName, {
+        await sendMessageAdapter(instance, {
           number: groupId,
           audio: mediaUrl,
           ...(delayMs && { delay: delayMs }),
         });
       } else {
-        // document ou outro tipo genérico
-        await sendMessage(instanceName, {
+        await sendMessageAdapter(instance, {
           number: groupId,
           document: mediaUrl,
           fileName: fileName || 'arquivo',
           ...(delayMs && { delay: delayMs }),
         });
       }
-      void mimeType; // Por enquanto, apenas documentamos o mimetype
+      void mimeType;
       break;
     }
     case 'poll': {
-      // Envio de enquete usa endpoint específico da Evolution API
+      if (instance.integration === 'WHATSAPP-CLOUD') {
+        throw new Error('Enquete não suportada para API Oficial');
+      }
       const name = contentJson?.name;
       const values: string[] = contentJson?.values || [];
       const selectableCount = contentJson?.selectableCount ?? 1;
@@ -699,11 +696,10 @@ async function sendGroupMessageByType(
         throw new Error('A enquete deve ter pelo menos duas opções');
       }
 
-      // Usar requestEvolutionAPI diretamente para sendPoll
       const { requestEvolutionAPI } = await import('../utils/evolutionAPI');
       await requestEvolutionAPI(
         'POST',
-        `/message/sendPoll/${encodeURIComponent(instanceName)}`,
+        `/message/sendPoll/${encodeURIComponent(instance.instanceName)}`,
         {
           number: groupId,
           name: String(name),
@@ -714,6 +710,9 @@ async function sendGroupMessageByType(
       break;
     }
     case 'contact': {
+      if (instance.integration === 'WHATSAPP-CLOUD') {
+        throw new Error('Envio de contato não suportado para API Oficial');
+      }
       const contacts = contentJson?.contact;
       if (!Array.isArray(contacts) || contacts.length === 0) {
         throw new Error('Pelo menos um contato é obrigatório');
@@ -722,7 +721,7 @@ async function sendGroupMessageByType(
       const { requestEvolutionAPI } = await import('../utils/evolutionAPI');
       await requestEvolutionAPI(
         'POST',
-        `/message/sendContact/${encodeURIComponent(instanceName)}`,
+        `/message/sendContact/${encodeURIComponent(instance.instanceName)}`,
         {
           number: groupId,
           contact: contacts,
@@ -731,6 +730,9 @@ async function sendGroupMessageByType(
       break;
     }
     case 'location': {
+      if (instance.integration === 'WHATSAPP-CLOUD') {
+        throw new Error('Envio de localização não suportado para API Oficial');
+      }
       const name = contentJson?.name;
       const address = contentJson?.address;
       const latitude = contentJson?.latitude;
@@ -748,7 +750,7 @@ async function sendGroupMessageByType(
       const { requestEvolutionAPI } = await import('../utils/evolutionAPI');
       await requestEvolutionAPI(
         'POST',
-        `/message/sendLocation/${encodeURIComponent(instanceName)}`,
+        `/message/sendLocation/${encodeURIComponent(instance.instanceName)}`,
         {
           number: groupId,
           name: name || '',
@@ -768,16 +770,11 @@ async function sendGroupMessageByType(
       const delaySeconds = contentJson?.delay;
       const delayMs = delaySeconds ? delaySeconds * 1000 : undefined;
 
-      const { requestEvolutionAPI } = await import('../utils/evolutionAPI');
-      await requestEvolutionAPI(
-        'POST',
-        `/message/sendWhatsAppAudio/${encodeURIComponent(instanceName)}`,
-        {
-          number: groupId,
-          audio: audioUrl,
-          ...(delayMs && { delay: delayMs }),
-        }
-      );
+      await sendMessageAdapter(instance, {
+        number: groupId,
+        audio: audioUrl,
+        ...(delayMs && { delay: delayMs }),
+      });
       break;
     }
     default:

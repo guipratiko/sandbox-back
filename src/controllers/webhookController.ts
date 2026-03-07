@@ -203,9 +203,10 @@ export const receiveWebhook = async (
 };
 
 /**
- * Processa evento MESSAGES_UPSERT (nova mensagem recebida/enviada)
+ * Processa evento MESSAGES_UPSERT (nova mensagem recebida/enviada).
+ * Exportado para uso pelo webhook da API Oficial (Meta).
  */
-async function handleMessagesUpsert(instance: any, eventData: any): Promise<void> {
+export async function handleMessagesUpsert(instance: any, eventData: any): Promise<void> {
   console.log('💬 Nova mensagem recebida/enviada');
   
   // Os dados podem estar em eventData.data ou diretamente em eventData
@@ -286,11 +287,13 @@ async function handleMessagesUpsert(instance: any, eventData: any): Promise<void
           const phone = formatWhatsAppPhone(extracted.remoteJid);
           const pushName = extracted.pushName || phone;
           let profilePictureUrl: string | null = null;
-          try {
-            const number = extractPhoneFromJid(extracted.remoteJid) || '';
-            profilePictureUrl = await fetchProfilePictureUrl(instance.instanceName, number);
-          } catch {
-            // Não é crítico
+          if (instance.integration !== 'WHATSAPP-CLOUD') {
+            try {
+              const number = extractPhoneFromJid(extracted.remoteJid) || '';
+              profilePictureUrl = await fetchProfilePictureUrl(instance.instanceName, number);
+            } catch {
+              // Não é crítico
+            }
           }
           contact = await ContactService.findOrCreate({
             userId,
@@ -387,11 +390,10 @@ async function handleMessagesUpsert(instance: any, eventData: any): Promise<void
         console.log(`📋 Contato já existe: ${pushName} (${phone})`);
       }
 
-      // Buscar foto de perfil (apenas para novos contatos ou se não tiver foto)
+      // Buscar foto de perfil (apenas para novos contatos ou se não tiver foto; não para API Oficial)
       let profilePictureUrl: string | null = null;
-      if (isNewContact || !contact?.profilePicture) {
+      if (instance.integration !== 'WHATSAPP-CLOUD' && (isNewContact || !contact?.profilePicture)) {
         try {
-          // Extrair número do remoteJid
           const number = extracted.remoteJid ? extractPhoneFromJid(extracted.remoteJid) : '';
           profilePictureUrl = await fetchProfilePictureUrl(instance.instanceName, number);
           if (profilePictureUrl) {
@@ -400,7 +402,6 @@ async function handleMessagesUpsert(instance: any, eventData: any): Promise<void
         } catch (error: unknown) {
           const errorMessage = error instanceof Error ? error.message : 'Erro desconhecido';
           console.error('Erro ao buscar foto de perfil:', errorMessage);
-          // Não é crítico, continuar sem foto
         }
       }
 
