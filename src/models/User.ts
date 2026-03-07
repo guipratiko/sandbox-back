@@ -1,0 +1,110 @@
+import mongoose, { Document, Schema } from 'mongoose';
+
+export interface IUser extends Document {
+  name: string;
+  email: string;
+  password: string;
+  cpf: string; // CPF (apenas números, único)
+  profilePicture?: string;
+  companyName?: string;
+  phone?: string;
+  timezone?: string; // Fuso horário do usuário (ex: 'America/Sao_Paulo', 'America/New_York')
+  premiumPlan: 'free' | 'start' | 'advance' | 'pro'; // Plano: free, start, advance, pro
+  admin: boolean; // Administrador do sistema
+  scrapingCredits?: number; // Créditos para Scraping-Flow (resultados disponíveis: 500 = R$25, 1000 = R$50)
+  activationToken?: string; // Token para ativação de conta (pré-cadastro)
+  activationTokenExpires?: Date; // Data de expiração do token de ativação
+  resetPasswordToken?: string; // Token para recuperação de senha
+  resetPasswordTokenExpires?: Date; // Data de expiração do token de recuperação
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+const UserSchema: Schema = new Schema(
+  {
+    name: {
+      type: String,
+      required: [true, 'Nome é obrigatório'],
+      trim: true,
+      minlength: [3, 'Nome deve ter no mínimo 3 caracteres'],
+    },
+    email: {
+      type: String,
+      required: [true, 'Email é obrigatório'],
+      unique: true,
+      lowercase: true,
+      trim: true,
+      match: [/^\S+@\S+\.\S+$/, 'Email inválido'],
+    },
+    password: {
+      type: String,
+      required: [true, 'Senha é obrigatória'],
+      minlength: [6, 'Senha deve ter no mínimo 6 caracteres'],
+      select: false, // Não retornar senha por padrão
+    },
+    cpf: {
+      type: String,
+      required: [true, 'CPF é obrigatório'],
+      unique: true,
+      trim: true,
+      match: [/^\d{11}$/, 'CPF deve conter exatamente 11 dígitos numéricos'],
+    },
+    profilePicture: {
+      type: String,
+      default: null,
+    },
+    companyName: {
+      type: String,
+      trim: true,
+      default: null,
+    },
+    phone: {
+      type: String,
+      trim: true,
+      default: null,
+    },
+    timezone: {
+      type: String,
+      trim: true,
+      default: 'America/Sao_Paulo', // Fuso horário padrão: São Paulo
+    },
+    premiumPlan: {
+      type: String,
+      enum: ['free', 'start', 'advance', 'pro'],
+      default: 'free',
+    },
+    admin: {
+      type: Boolean,
+      default: false, // Padrão: não é administrador
+    },
+    scrapingCredits: {
+      type: Number,
+      default: 0,
+      min: 0,
+    },
+    activationToken: {
+      type: String,
+      default: null,
+      select: false, // Não retornar token por padrão
+    },
+    activationTokenExpires: {
+      type: Date,
+      default: null,
+    },
+    resetPasswordToken: {
+      type: String,
+      default: null,
+      select: false, // Não retornar token por padrão
+    },
+    resetPasswordTokenExpires: {
+      type: Date,
+      default: null,
+    },
+  },
+  {
+    timestamps: true,
+  }
+);
+
+export default mongoose.model<IUser>('User', UserSchema);
+
