@@ -13,6 +13,7 @@ export function verifyWebhook(req: Request, res: Response): void {
   const token = req.query['hub.verify_token'];
   const challenge = req.query['hub.challenge'];
 
+  console.log('[WhatsApp Oficial] Webhook GET (verificação)', { mode, tokenPresent: !!token });
   if (mode === 'subscribe' && token === META_OAUTH_CONFIG.WHATSAPP_VERIFY_TOKEN) {
     res.status(200).send(challenge);
     return;
@@ -23,6 +24,9 @@ export function verifyWebhook(req: Request, res: Response): void {
 export async function receiveWebhook(req: Request, res: Response): Promise<void> {
   try {
     const body = req.body as Record<string, unknown>;
+    const entries = (body.entry as unknown[])?.length ?? 0;
+    console.log('[WhatsApp Oficial] Webhook POST recebido', { object: body.object, entries });
+
     if (body.object !== 'whatsapp_business_account') {
       res.status(200).json({ status: 'ok' });
       return;
@@ -35,15 +39,18 @@ export async function receiveWebhook(req: Request, res: Response): Promise<void>
         integration: 'WHATSAPP-CLOUD',
       });
       if (!instance) {
+        console.log('[WhatsApp Oficial] Nenhuma instância encontrada para phone_number_id:', phone_number_id);
         continue;
       }
+      const msgCount = eventData?.data?.messages?.length ?? 0;
+      console.log('[WhatsApp Oficial] Processando evento', { phone_number_id, instanceName: instance.instanceName, messages: msgCount });
       await handleMessagesUpsert(instance, eventData);
     }
 
     res.status(200).json({ status: 'ok' });
   } catch (error: unknown) {
     const msg = error instanceof Error ? error.message : 'Erro desconhecido';
-    console.error('Erro ao processar webhook WhatsApp Oficial:', msg);
+    console.error('[WhatsApp Oficial] Erro ao processar webhook:', msg);
     res.status(200).json({ status: 'ok' });
   }
 }
