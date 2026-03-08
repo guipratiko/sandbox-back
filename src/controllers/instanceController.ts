@@ -368,6 +368,79 @@ export const createOfficialInstance = async (
   }
 };
 
+const META_GRAPH_VERSION = 'v21.0';
+
+/**
+ * Registra o número na WhatsApp Cloud API (sai do status "Pendente").
+ * Requer o PIN de 6 dígitos da verificação em duas etapas da conta WhatsApp Business.
+ * Ref: https://developers.facebook.com/docs/graph-api/reference/whats-app-business-account-to-number-current-status/register/
+ */
+export const registerOfficialPhone = async (
+  req: AuthRequest,
+  res: Response,
+  next: NextFunction
+): Promise<void> => {
+  try {
+    const userId = req.user?.id;
+    const userObjectId = validateAndConvertUserId(userId);
+    const { id } = req.params;
+    const { pin } = req.body as { pin?: string };
+
+    if (!pin || typeof pin !== 'string' || !/^\d{6}$/.test(pin.trim())) {
+      return next(createValidationError('PIN deve ter exatamente 6 dígitos'));
+    }
+
+    const instance = await Instance.findOne({ _id: id, userId: userObjectId });
+
+    if (!instance) {
+      return next(createNotFoundError('Instância'));
+    }
+    if (instance.integration !== 'WHATSAPP-CLOUD') {
+      return next(createValidationError('Apenas instâncias da API Oficial podem ser registradas'));
+    }
+    const phone_number_id = instance.phone_number_id || (instance as any).instanceId;
+    if (!phone_number_id) {
+      return next(createValidationError('Instância sem phone_number_id'));
+    }
+
+    const accessToken =
+      (instance as any).meta_access_token || META_OAUTH_CONFIG.SYSTEM_USER_TOKEN;
+    if (!accessToken) {
+      return next(createValidationError('Token de acesso da Meta não configurado'));
+    }
+
+    const url = `https://graph.facebook.com/${META_GRAPH_VERSION}/${phone_number_id}/register`;
+    await axios.post(
+      url,
+      {
+        messaging_product: 'whatsapp',
+        pin: pin.trim(),
+      },
+      {
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+          'Content-Type': 'application/json',
+        },
+        timeout: 15000,
+      }
+    );
+
+    console.log('[WhatsApp Oficial] Número registrado com sucesso', { phone_number_id, instanceName: instance.instanceName });
+    res.status(200).json({
+      status: 'success',
+      message: 'Número registrado. O status deve sair de Pendente em instantes.',
+    });
+  } catch (error: unknown) {
+    if (axios.isAxiosError(error)) {
+      const msg = error.response?.data?.error?.message || error.message;
+      const code = error.response?.data?.error?.code;
+      console.error('[WhatsApp Oficial] Erro ao registrar número', { message: msg, code });
+      return next(createValidationError(msg || 'Falha ao registrar número na Meta'));
+    }
+    return next(handleControllerError(error, 'Erro ao registrar número'));
+  }
+};
+
 /**
  * Lista todas as instâncias do usuário
  */

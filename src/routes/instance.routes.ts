@@ -2,6 +2,7 @@ import { Router } from 'express';
 import {
   createInstance,
   createOfficialInstance,
+  registerOfficialPhone,
   getInstances,
   getInstance,
   updateInstanceSettings,
@@ -16,6 +17,7 @@ const router = Router();
 router.use(protect, requirePremium);
 
 router.post('/official', createOfficialInstance);
+router.post('/:id/register-phone', validateInstanceId, registerOfficialPhone);
 router.post('/', validateCreateInstance, createInstance);
 router.get('/', getInstances);
 router.get('/:id', validateInstanceId, getInstance);
