@@ -24,8 +24,10 @@ export function verifyWebhook(req: Request, res: Response): void {
 export async function receiveWebhook(req: Request, res: Response): Promise<void> {
   try {
     const body = req.body as Record<string, unknown>;
-    const entries = (body.entry as unknown[])?.length ?? 0;
-    console.log('[WhatsApp Oficial] Webhook POST recebido', { object: body.object, entries });
+    const entryList = (body.entry as unknown[]) ?? [];
+    const entries = entryList.length;
+    const changeFields = entryList.flatMap((e: any) => (e.changes ?? []).map((c: any) => c.field).filter(Boolean));
+    console.log('[WhatsApp Oficial] Webhook POST recebido', { object: body.object, entries, fields: changeFields });
 
     if (body.object !== 'whatsapp_business_account') {
       res.status(200).json({ status: 'ok' });
@@ -33,6 +35,9 @@ export async function receiveWebhook(req: Request, res: Response): Promise<void>
     }
 
     const normalized = normalizeMetaWebhookToEvolutionFormat(body as Parameters<typeof normalizeMetaWebhookToEvolutionFormat>[0]);
+    if (normalized.length === 0) {
+      console.log('[WhatsApp Oficial] Payload sem eventos messages/message_echoes (ignorado)', { changeFields });
+    }
     for (const { phone_number_id, eventData } of normalized) {
       const instance = await Instance.findOne({
         phone_number_id,
@@ -43,7 +48,11 @@ export async function receiveWebhook(req: Request, res: Response): Promise<void>
         continue;
       }
       const msgCount = eventData?.data?.messages?.length ?? 0;
-      console.log('[WhatsApp Oficial] Processando evento', { phone_number_id, instanceName: instance.instanceName, messages: msgCount });
+      console.log('[WhatsApp Oficial] Evento messages', {
+        phone_number_id,
+        instanceName: instance.instanceName,
+        messages: msgCount,
+      });
       await handleMessagesUpsert(instance, eventData);
     }
 

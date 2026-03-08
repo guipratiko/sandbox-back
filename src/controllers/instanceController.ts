@@ -421,7 +421,7 @@ export const registerOfficialPhone = async (
           Authorization: `Bearer ${accessToken}`,
           'Content-Type': 'application/json',
         },
-        timeout: 15000,
+        timeout: 45000,
       }
     );
 
