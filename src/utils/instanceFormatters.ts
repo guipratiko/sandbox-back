@@ -27,6 +27,7 @@ export const formatInstanceResponse = (instance: InstanceLean) => {
     status: instance.status || 'created',
     integration: instance.integration || 'WHATSAPP-BAILEYS',
     phone_number_id: (instance as any).phone_number_id ?? null,
+    waba_id: (instance as any).waba_id ?? null,
     display_phone_number: displayPhone ?? null,
     connectionLink,
     webhook: {

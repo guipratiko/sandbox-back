@@ -346,6 +346,22 @@ export const createOfficialInstance = async (
 
     await instance.save();
 
+    // Inscreve o app na WABA para receber webhooks (uma vez por WABA; não por número)
+    const tokenForSubscribe = accessToken || META_OAUTH_CONFIG.SYSTEM_USER_TOKEN;
+    if (waba_id && tokenForSubscribe) {
+      try {
+        await axios.post(
+          `https://graph.facebook.com/v21.0/${waba_id}/subscribed_apps`,
+          null,
+          { params: { access_token: tokenForSubscribe }, timeout: 10000 }
+        );
+        console.log('[WhatsApp Oficial] App inscrito na WABA para webhooks', { waba_id });
+      } catch (subErr) {
+        // Já inscrito ou outro motivo; não falha a criação da instância
+        console.warn('[WhatsApp Oficial] subscribed_apps (inscrição na WABA):', subErr instanceof Error ? subErr.message : subErr);
+      }
+    }
+
     try {
       const io = getIO();
       if (userId) {
