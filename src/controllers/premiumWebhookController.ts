@@ -34,8 +34,10 @@ interface PremiumWebhookBody {
   'transaction id'?: string;
   // Plano: start | advance | pro (envie no payload para diferenciar; se omitido, usa 'pro')
   plan?: string;
+  Plan?: string; // alguns gateways enviam com P maiúsculo
   premium_plan?: string;
   product_id?: string; // ex.: "plan_start", "plan_advance", "plan_pro"
+  subscription?: { plan?: string }; // payload aninhado (ex.: Asaas)
   // Campos comuns
   status: 'ACTIVE' | 'INACTIVE';
   amount?: number | string;
@@ -46,7 +48,14 @@ interface PremiumWebhookBody {
 
 /** Normaliza o valor do plano vindo do webhook para 'start' | 'advance' | 'pro'. Se inválido ou ausente, retorna 'pro'. */
 function resolvePremiumPlan(body: PremiumWebhookBody): 'start' | 'advance' | 'pro' {
-  const raw = (body.plan || body.premium_plan || body.product_id || '').toString().trim().toLowerCase();
+  const planRaw =
+    body.plan ??
+    (body as { Plan?: string }).Plan ??
+    body.premium_plan ??
+    body.product_id ??
+    body.subscription?.plan ??
+    '';
+  const raw = String(planRaw).trim().toLowerCase();
   if (raw === 'start' || raw === 'plan_start' || raw === 'starter') return 'start';
   if (raw === 'advance' || raw === 'plan_advance' || raw === 'advanced' || raw === 'advancado') return 'advance';
   if (raw === 'pro' || raw === 'plan_pro' || raw === 'professional') return 'pro';
