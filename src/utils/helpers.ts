@@ -28,5 +28,15 @@ export function validateAndConvertUserId(userId: string | mongoose.Types.ObjectI
   return convertUserIdToObjectId(userId);
 }
 
+/**
+ * Garante que a URL seja HTTPS (evita Mixed Content quando o front está em HTTPS).
+ * Se a URL for null/undefined ou vazia, retorna null.
+ */
+export function ensureHttps(url: string | null | undefined): string | null {
+  if (url == null || url === '') return null;
+  if (url.startsWith('http://')) return 'https://' + url.slice(7);
+  return url;
+}
+
 
 

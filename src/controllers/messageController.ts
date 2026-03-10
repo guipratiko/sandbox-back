@@ -11,6 +11,7 @@ import { extractMessageId } from '../utils/webhookAPIHelpers';
 import { AIAgentService } from '../services/aiAgentService';
 import { pauseAgentForContact } from '../services/aiAgentProcessor';
 import { extractPhoneFromJid } from '../utils/numberNormalizer';
+import { ensureHttps } from '../utils/helpers';
 
 /**
  * Obter mensagens de um contato (com paginação)
@@ -64,7 +65,7 @@ export const getMessages = async (
         fromMe: msg.fromMe,
         messageType: msg.messageType,
         content: msg.content,
-        mediaUrl: msg.mediaUrl || null,
+        mediaUrl: ensureHttps(msg.mediaUrl) ?? null,
         timestamp: msg.timestamp.toISOString(),
         read: msg.read,
       })),
@@ -216,7 +217,7 @@ export const sendMedia = async (
         fromMe: message.fromMe,
         messageType: message.messageType,
         content: message.content,
-        mediaUrl: message.mediaUrl,
+        mediaUrl: ensureHttps(message.mediaUrl) ?? null,
         timestamp: message.timestamp.toISOString(),
       },
     });
@@ -323,7 +324,7 @@ export const sendAudio = async (
         fromMe: message.fromMe,
         messageType: message.messageType,
         content: message.content,
-        mediaUrl: message.mediaUrl,
+        mediaUrl: ensureHttps(message.mediaUrl) ?? null,
         timestamp: message.timestamp.toISOString(),
       },
     });

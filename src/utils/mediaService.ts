@@ -1,6 +1,7 @@
 import FormData from 'form-data';
 import axios from 'axios';
 import { MEDIA_SERVICE_CONFIG } from '../config/constants';
+import { ensureHttps } from './helpers';
 
 /**
  * Mapeia messageType para extensão de arquivo
@@ -73,9 +74,10 @@ export const uploadMediaToService = async (
     );
 
     if (response.data.success) {
+      const fullUrl = ensureHttps(response.data.fullUrl) ?? response.data.fullUrl;
       return {
         url: response.data.url,
-        fullUrl: response.data.fullUrl,
+        fullUrl,
       };
     }
 
@@ -140,9 +142,10 @@ export const uploadFileToService = async (
     );
 
     if (response.data.success) {
+      const fullUrl = ensureHttps(response.data.fullUrl) ?? response.data.fullUrl;
       return {
         url: response.data.url,
-        fullUrl: response.data.fullUrl,
+        fullUrl,
       };
     }
 
