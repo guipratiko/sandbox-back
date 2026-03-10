@@ -249,10 +249,12 @@ export const sendMessage = async (
         body.caption = payload.caption;
       }
     } else if (payload.audio) {
-      // Áudio
-      path = `/message/sendMedia/${encodeURIComponent(instanceName)}`;
-      body.mediatype = 'audio';
-      body.media = payload.audio;
+      // Mensagem de voz (PTT) — usar sendWhatsAppAudio para aparecer como áudio gravado no WhatsApp
+      path = `/message/sendWhatsAppAudio/${encodeURIComponent(instanceName)}`;
+      body.audioMessage = { audio: payload.audio };
+      if (payload.delay) {
+        body.options = { delay: payload.delay, presence: 'recording' };
+      }
     } else if (payload.document) {
       // Arquivo
       path = `/message/sendMedia/${encodeURIComponent(instanceName)}`;

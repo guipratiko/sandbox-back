@@ -27,12 +27,15 @@ export const phoneToRemoteJid = (phone: string): string => {
 };
 
 /**
- * Extrai messageId da resposta da Evolution API
+ * Extrai messageId da resposta da Evolution API ou OficialAPI.
+ * Evolution devolve { key: { id } }; OficialAPI adapter devolve { data: { key: { id } } }.
  */
 export const extractMessageId = (evolutionResponse: any): string => {
   return (
-    evolutionResponse.data?.key?.id ||
-    evolutionResponse.data?.messageId ||
+    evolutionResponse?.data?.key?.id ||
+    evolutionResponse?.key?.id ||
+    evolutionResponse?.data?.messageId ||
+    evolutionResponse?.messageId ||
     `temp_${Date.now()}_${Math.random()}`
   );
 };

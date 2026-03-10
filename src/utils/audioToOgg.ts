@@ -1,11 +1,14 @@
 /**
- * Converte áudio (webm, mp4, etc.) para OGG/OPUS antes do envio ao WhatsApp (Meta aceita audio/ogg).
+ * Converte áudio (webm, mp4, etc.) para OGG/OPUS antes do envio ao WhatsApp.
+ * Meta aceita audio/ogg; gravações do navegador costumam vir em webm.
  */
 
 import fs from 'fs/promises';
 import path from 'path';
 import os from 'os';
 import ffmpeg from 'fluent-ffmpeg';
+
+const OGG_MIME = 'audio/ogg';
 
 /** ffmpeg-static v2 exporta { path: string }, não a string diretamente */
 function getFfmpegPath(): string | undefined {
@@ -21,25 +24,31 @@ function getFfmpegPath(): string | undefined {
   }
 }
 
+function cleanupTemp(paths: string[]): void {
+  paths.forEach((p) => fs.unlink(p).catch(() => {}));
+}
+
 const ffmpegPath = getFfmpegPath();
 if (ffmpegPath) {
   ffmpeg.setFfmpegPath(ffmpegPath);
 }
 
-const OGG_MIME = 'audio/ogg';
+/** Retorna extensão do arquivo de entrada para nomear o temp. */
+function inputExtension(mime: string): string {
+  if (mime.includes('webm')) return 'webm';
+  if (mime.includes('mp4') || mime.includes('m4a')) return 'm4a';
+  return 'bin';
+}
 
-/**
- * Verifica se o áudio já está em formato OGG (não precisa converter).
- */
 export function isOggMime(mime: string): boolean {
   const base = (mime || '').toLowerCase().split(';')[0].trim();
   return base === 'audio/ogg' || base === 'audio/opus';
 }
 
 /**
- * Converte um buffer de áudio para OGG (codec OPUS).
- * Se o input já for audio/ogg, retorna o buffer original.
- * Em caso de erro na conversão, retorna o buffer original e loga o aviso.
+ * Converte buffer de áudio para OGG (codec OPUS).
+ * Se já for audio/ogg, retorna o buffer original.
+ * Em falha na conversão, retorna o original e loga aviso.
  */
 export async function convertAudioToOgg(
   inputBuffer: Buffer,
@@ -51,13 +60,11 @@ export async function convertAudioToOgg(
 
   const tmpDir = os.tmpdir();
   const id = `audio-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
-  const ext = inputMime.includes('webm') ? 'webm' : inputMime.includes('mp4') || inputMime.includes('m4a') ? 'm4a' : 'bin';
-  const inputPath = path.join(tmpDir, `${id}.${ext}`);
+  const inputPath = path.join(tmpDir, `${id}.${inputExtension(inputMime)}`);
   const outputPath = path.join(tmpDir, `${id}.ogg`);
 
   try {
     await fs.writeFile(inputPath, inputBuffer);
-
     await new Promise<void>((resolve, reject) => {
       ffmpeg(inputPath)
         .outputOptions(['-c:a libopus', '-b:a 64k'])
@@ -66,20 +73,12 @@ export async function convertAudioToOgg(
         .on('error', (err: Error) => reject(err))
         .run();
     });
-
     const outputBuffer = await fs.readFile(outputPath);
-    await fs.unlink(inputPath).catch(() => {});
-    await fs.unlink(outputPath).catch(() => {});
-
+    cleanupTemp([inputPath, outputPath]);
     return { buffer: outputBuffer, mime: OGG_MIME };
   } catch (err) {
     console.warn('[convertAudioToOgg] Conversão falhou, usando áudio original:', err instanceof Error ? err.message : err);
-    try {
-      await fs.unlink(inputPath).catch(() => {});
-      await fs.unlink(outputPath).catch(() => {});
-    } catch {
-      // ignore
-    }
+    cleanupTemp([inputPath, outputPath]);
     return { buffer: inputBuffer, mime: inputMime };
   }
 }

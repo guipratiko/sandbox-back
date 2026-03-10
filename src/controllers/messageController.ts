@@ -14,6 +14,14 @@ import { pauseAgentForContact } from '../services/aiAgentProcessor';
 import { extractPhoneFromJid } from '../utils/numberNormalizer';
 import { ensureHttps } from '../utils/helpers';
 
+/** Tipos MIME aceitos no upload de mídia (imagem, vídeo, áudio). */
+const ALLOWED_UPLOAD_MIMES = [
+  'image/jpeg', 'image/jpg', 'image/png', 'image/gif', 'image/webp',
+  'video/mp4', 'video/quicktime',
+  'audio/mpeg', 'audio/mp3', 'audio/ogg', 'audio/wav', 'audio/webm',
+  'audio/x-m4a', 'audio/m4a', 'audio/aac',
+];
+
 /**
  * Obter mensagens de um contato (com paginação)
  */
@@ -84,26 +92,7 @@ const upload = multer({
     fileSize: 50 * 1024 * 1024, // 50MB
   },
   fileFilter: (req, file, cb) => {
-    // Permitir imagens, vídeos e áudios
-    const allowedMimes = [
-      'image/jpeg',
-      'image/jpg',
-      'image/png',
-      'image/gif',
-      'image/webp',
-      'video/mp4',
-      'video/quicktime',
-      'audio/mpeg',
-      'audio/mp3',
-      'audio/ogg',
-      'audio/wav',
-      'audio/webm', // Formato gravado pelo navegador
-      'audio/x-m4a', // Formato alternativo
-      'audio/m4a', // Formato alternativo
-      'audio/aac', // Formato alternativo
-    ];
-    
-    if (allowedMimes.includes(file.mimetype)) {
+    if (ALLOWED_UPLOAD_MIMES.includes(file.mimetype)) {
       cb(null, true);
     } else {
       cb(new Error('Tipo de arquivo não permitido. Use imagens, vídeos ou áudios.'));
@@ -117,7 +106,7 @@ const upload = multer({
 export const uploadMedia = upload.single('file');
 
 /**
- * Enviar mídia (imagem/vídeo) via Evolution API
+ * Enviar mídia (imagem, vídeo, áudio ou documento) — Evolution ou API Oficial.
  */
 export const sendMedia = async (
   req: AuthRequest,
@@ -228,7 +217,7 @@ export const sendMedia = async (
 };
 
 /**
- * Enviar áudio via Evolution API
+ * Enviar áudio (Evolution ou API Oficial). Áudio é convertido para OGG antes do envio quando necessário.
  */
 export const sendAudio = async (
   req: AuthRequest,

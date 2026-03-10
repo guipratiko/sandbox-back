@@ -18,9 +18,9 @@ export interface SendMessagePayload {
   image?: string;
   video?: string;
   audio?: string;
-  /** Base64 do áudio (prioridade sobre audio URL quando API oficial); evita download pela OficialAPI */
+  /** Fallback: base64 do áudio quando envio por URL não for possível */
   audio_base64?: string;
-  /** Mimetype do áudio quando enviado em audio_base64 (ex: audio/ogg, audio/webm) */
+  /** Mimetype quando usar audio_base64 (ex: audio/ogg) */
   audio_mimetype?: string;
   document?: string;
   caption?: string;
