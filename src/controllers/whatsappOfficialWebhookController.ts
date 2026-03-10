@@ -9,6 +9,16 @@ import { normalizeMetaWebhookToEvolutionFormat } from '../utils/metaWebhookNorma
 import { fetchMetaMediaAndUploadToMidiaService } from '../utils/mediaService';
 import { handleMessagesUpsert } from './webhookController';
 
+/** Mensagem no formato normalizado (metaWebhookNormalizer), com campos opcionais de mídia */
+interface NormalizedMessage {
+  key?: { id?: string };
+  messageType?: string;
+  messageId?: string;
+  mediaId?: string;
+  metaType?: string;
+  mediaUrl?: string;
+}
+
 export function verifyWebhook(req: Request, res: Response): void {
   const mode = req.query['hub.mode'];
   const token = req.query['hub.verify_token'];
@@ -44,12 +54,12 @@ export async function receiveWebhook(req: Request, res: Response): Promise<void>
         continue;
       }
       const token = (instance as any).meta_access_token || META_OAUTH_CONFIG.SYSTEM_USER_TOKEN;
-      const messages = eventData?.data?.messages ?? [];
+      const messages = (eventData?.data?.messages ?? []) as NormalizedMessage[];
       for (const msg of messages) {
         const mediaId = msg.mediaId;
         if (mediaId && (msg.metaType || msg.messageType)) {
           const keyId = (msg.key && typeof msg.key === 'object' && msg.key.id) ? msg.key.id : msg.messageId || `msg_${Date.now()}`;
-          const metaType = msg.metaType || (msg.messageType === 'audioMessage' ? 'audio' : msg.messageType === 'imageMessage' ? 'image' : msg.messageType === 'videoMessage' ? 'video' : msg.messageType === 'documentMessage' ? 'document' : msg.messageType);
+          const metaType: string = msg.metaType || (msg.messageType === 'audioMessage' ? 'audio' : msg.messageType === 'imageMessage' ? 'image' : msg.messageType === 'videoMessage' ? 'video' : msg.messageType === 'documentMessage' ? 'document' : msg.messageType ?? 'document');
           const url = await fetchMetaMediaAndUploadToMidiaService(mediaId, metaType, keyId, token);
           if (url) {
             msg.mediaUrl = url;
