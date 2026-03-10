@@ -3,6 +3,20 @@ import axios from 'axios';
 import { MEDIA_SERVICE_CONFIG } from '../config/constants';
 import { ensureHttps } from './helpers';
 
+const META_GRAPH_VERSION = 'v21.0';
+
+/** Mapeia tipo da Meta (webhook) para messageType interno (audioMessage, etc.) */
+function metaTypeToMessageType(metaType: string): string {
+  const map: Record<string, string> = {
+    audio: 'audioMessage',
+    image: 'imageMessage',
+    video: 'videoMessage',
+    document: 'documentMessage',
+    sticker: 'stickerMessage',
+  };
+  return map[metaType] || metaType;
+}
+
 /**
  * Mapeia messageType para extensão de arquivo
  */
@@ -179,4 +193,44 @@ export const detectMediaType = (mimetype: string): { mediatype: string; messageT
   }
   return { mediatype: 'document', messageType: 'documentMessage' };
 };
+
+/**
+ * Busca mídia na Meta (Graph API) e faz upload no MidiaService.
+ * Usado para mensagens recebidas via API Oficial (webhook) que trazem apenas media_id.
+ */
+export async function fetchMetaMediaAndUploadToMidiaService(
+  mediaId: string,
+  metaType: string,
+  messageId: string,
+  accessToken: string
+): Promise<string | null> {
+  try {
+    const infoRes = await axios.get<{ url?: string }>(
+      `https://graph.facebook.com/${META_GRAPH_VERSION}/${mediaId}`,
+      { params: { access_token: accessToken }, timeout: 15000 }
+    );
+    const downloadUrl = infoRes.data?.url;
+    if (!downloadUrl) {
+      console.warn('[Meta Media] Resposta sem url para media_id:', mediaId);
+      return null;
+    }
+    const fileRes = await axios.get<ArrayBuffer>(downloadUrl, {
+      responseType: 'arraybuffer',
+      headers: { Authorization: `Bearer ${accessToken}` },
+      timeout: 30000,
+      maxContentLength: 50 * 1024 * 1024,
+    });
+    const buffer = Buffer.from(fileRes.data);
+    const messageType = metaTypeToMessageType(metaType);
+    const contentType = getContentType(messageType);
+    const ext = getFileExtension(messageType);
+    const fileName = `${messageId}-${Date.now()}.${ext}`;
+    const result = await uploadFileToService(buffer, fileName, contentType);
+    return result?.fullUrl ?? null;
+  } catch (error: unknown) {
+    const msg = error instanceof Error ? error.message : 'Erro desconhecido';
+    console.error('[Meta Media] Erro ao buscar/enviar mídia:', mediaId, msg);
+    return null;
+  }
+}
 

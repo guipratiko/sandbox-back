@@ -9,6 +9,8 @@ export interface ExtractedMessageData {
   conversation: string | null;
   messageType: string | null;
   base64: string | null;
+  /** URL da mídia (preenchido pelo webhook oficial após buscar na Meta e enviar ao MidiaService) */
+  mediaUrl: string | null;
   messageId: string | null;
   messageTimestamp: any;
 }
@@ -58,6 +60,10 @@ export const extractMessageData = (msg: any): ExtractedMessageData => {
       messageData.base64 ||
       msg.message?.base64 ||
       messageData.message?.base64 ||
+      null,
+    mediaUrl:
+      msg.mediaUrl ||
+      messageData.mediaUrl ||
       null,
     messageId:
       msg.key?.id ||

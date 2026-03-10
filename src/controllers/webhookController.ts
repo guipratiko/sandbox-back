@@ -313,10 +313,11 @@ export async function handleMessagesUpsert(instance: any, eventData: any): Promi
         const messageType = extracted.messageType || 'conversation';
         const messageTimestamp = normalizeWhatsAppTimestamp(extracted.messageTimestamp);
 
-        const isMedia = extracted.base64 && messageType !== 'conversation';
-        let mediaUrl: string | null = null;
+        const isMediaByUrl = !!extracted.mediaUrl && messageType !== 'conversation';
+        const isMediaByBase64 = !!extracted.base64 && messageType !== 'conversation';
+        let mediaUrl: string | null = extracted.mediaUrl || null;
 
-        if (isMedia && extracted.base64) {
+        if (!mediaUrl && isMediaByBase64 && extracted.base64) {
           console.log(`📤 Fazendo upload de mídia enviada (${messageType}) para MidiaService...`);
           const uploadResult = await uploadMediaToService(
             extracted.base64,
@@ -337,7 +338,7 @@ export async function handleMessagesUpsert(instance: any, eventData: any): Promi
           messageId,
           fromMe: true,
           messageType,
-          content: isMedia ? '[Mídia]' : conversation,
+          content: (isMediaByUrl || isMediaByBase64) ? '[Mídia]' : conversation,
           mediaUrl: mediaUrl || null,
           timestamp: messageTimestamp,
           read: true,
@@ -454,19 +455,17 @@ export async function handleMessagesUpsert(instance: any, eventData: any): Promi
       const messageType = extracted.messageType || 'conversation';
       const messageTimestamp = normalizeWhatsAppTimestamp(extracted.messageTimestamp);
       
-      // Verificar se é mídia (tem base64 e não é conversation)
-      const isMedia = extracted.base64 && messageType !== 'conversation';
-      let mediaUrl: string | null = null;
+      const isMediaByUrl = !!extracted.mediaUrl && messageType !== 'conversation';
+      const isMediaByBase64 = !!extracted.base64 && messageType !== 'conversation';
+      let mediaUrl: string | null = extracted.mediaUrl || null;
       
-      // Se for mídia, fazer upload para o MidiaService
-      if (isMedia && extracted.base64) {
+      if (!mediaUrl && isMediaByBase64 && extracted.base64) {
         console.log(`📤 Fazendo upload de mídia (${messageType}) para MidiaService...`);
         const uploadResult = await uploadMediaToService(
           extracted.base64,
           messageId,
           messageType
         );
-        
         if (uploadResult) {
           mediaUrl = uploadResult.fullUrl;
           console.log(`✅ Mídia enviada com sucesso: ${mediaUrl}`);
@@ -475,7 +474,6 @@ export async function handleMessagesUpsert(instance: any, eventData: any): Promi
         }
       }
       
-      // Salvar mensagem no PostgreSQL (o trigger atualiza last_message automaticamente)
       try {
         const savedMessage = await MessageService.createMessage({
           userId: userId,
@@ -485,7 +483,7 @@ export async function handleMessagesUpsert(instance: any, eventData: any): Promi
           messageId,
           fromMe: false,
           messageType,
-          content: isMedia ? '[Mídia]' : conversation,
+          content: (isMediaByUrl || isMediaByBase64) ? '[Mídia]' : conversation,
           mediaUrl: mediaUrl || null,
           timestamp: messageTimestamp,
           read: false,

@@ -24,6 +24,10 @@ export interface MetaWebhookValue {
     timestamp: string;
     type: string;
     text?: { body?: string };
+    image?: { id?: string };
+    video?: { id?: string };
+    audio?: { id?: string };
+    document?: { id?: string };
   }>;
   statuses?: Array<unknown>;
 }
@@ -65,21 +69,37 @@ export function normalizeMetaWebhookToEvolutionFormat(body: {
       const list = change.field === 'message_echoes' ? value.message_echoes : value.messages;
       if (!Array.isArray(list)) continue;
 
+      const typeToMessageType: Record<string, string> = {
+        audio: 'audioMessage',
+        image: 'imageMessage',
+        video: 'videoMessage',
+        document: 'documentMessage',
+        sticker: 'stickerMessage',
+      };
       for (const msg of list) {
         const from = msg.from || '';
         const remoteJid = from ? `${from}@s.whatsapp.net` : '';
         let conversation = '';
         if (msg.text?.body) conversation = msg.text.body;
         const pushName = contactsMap.get(from) || from;
+        const msgType = msg.type || 'text';
+        const messageType = typeToMessageType[msgType] || msgType;
+        const mediaId =
+          msgType === 'audio' ? msg.audio?.id
+          : msgType === 'image' ? msg.image?.id
+          : msgType === 'video' ? msg.video?.id
+          : msgType === 'document' ? msg.document?.id
+          : undefined;
 
         messages.push({
           remoteJid,
           fromMe,
           pushName,
           conversation,
-          messageType: msg.type || 'text',
+          messageType,
           key: { id: msg.id, timestamp: msg.timestamp },
           messageTimestamp: msg.timestamp,
+          ...(mediaId ? { mediaId, metaType: msgType } : {}),
         });
       }
 

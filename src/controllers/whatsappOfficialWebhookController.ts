@@ -6,6 +6,7 @@ import { Request, Response } from 'express';
 import Instance from '../models/Instance';
 import { META_OAUTH_CONFIG } from '../config/constants';
 import { normalizeMetaWebhookToEvolutionFormat } from '../utils/metaWebhookNormalizer';
+import { fetchMetaMediaAndUploadToMidiaService } from '../utils/mediaService';
 import { handleMessagesUpsert } from './webhookController';
 
 export function verifyWebhook(req: Request, res: Response): void {
@@ -42,7 +43,21 @@ export async function receiveWebhook(req: Request, res: Response): Promise<void>
         console.log('[WhatsApp Oficial] Nenhuma instância encontrada para phone_number_id:', phone_number_id);
         continue;
       }
-      const msgCount = eventData?.data?.messages?.length ?? 0;
+      const token = (instance as any).meta_access_token || META_OAUTH_CONFIG.SYSTEM_USER_TOKEN;
+      const messages = eventData?.data?.messages ?? [];
+      for (const msg of messages) {
+        const mediaId = msg.mediaId;
+        if (mediaId && (msg.metaType || msg.messageType)) {
+          const keyId = (msg.key && typeof msg.key === 'object' && msg.key.id) ? msg.key.id : msg.messageId || `msg_${Date.now()}`;
+          const metaType = msg.metaType || (msg.messageType === 'audioMessage' ? 'audio' : msg.messageType === 'imageMessage' ? 'image' : msg.messageType === 'videoMessage' ? 'video' : msg.messageType === 'documentMessage' ? 'document' : msg.messageType);
+          const url = await fetchMetaMediaAndUploadToMidiaService(mediaId, metaType, keyId, token);
+          if (url) {
+            msg.mediaUrl = url;
+            console.log('[WhatsApp Oficial] Mídia baixada e enviada ao MidiaService:', msg.messageType, keyId);
+          }
+        }
+      }
+      const msgCount = messages.length;
       console.log('[WhatsApp Oficial] Processando evento', { phone_number_id, instanceName: instance.instanceName, messages: msgCount });
       await handleMessagesUpsert(instance, eventData);
     }
