@@ -4,6 +4,7 @@ import Instance from '../models/Instance'; // Ainda no MongoDB
 import { AuthRequest } from '../middleware/auth';
 import { sendMessage as sendMessageAdapter } from '../utils/sendMessageAdapter';
 import { uploadFileToService, detectMediaType } from '../utils/mediaService';
+import { convertAudioToOgg } from '../utils/audioToOgg';
 import { createValidationError, createNotFoundError, handleControllerError } from '../utils/errorHelpers';
 import { ContactService } from '../services/contactService';
 import { MessageService } from '../services/messageService';
@@ -264,12 +265,16 @@ export const sendAudio = async (
       return next(createNotFoundError('Instância'));
     }
 
-    // Fazer upload para MidiaService
-    const fileName = file.originalname || `audio-${Date.now()}.${file.mimetype.split('/')[1]}`;
+    // Converter para OGG (OPUS) antes do envio — WhatsApp/Meta aceita audio/ogg
+    const { buffer: audioBuffer, mime: audioMime } = await convertAudioToOgg(file.buffer, file.mimetype);
+    const fileName = file.originalname
+      ? file.originalname.replace(/\.[^.]+$/, '.ogg')
+      : `audio-${Date.now()}.ogg`;
+
     const uploadResult = await uploadFileToService(
-      file.buffer,
+      audioBuffer,
       fileName,
-      file.mimetype
+      audioMime
     );
 
     if (!uploadResult) {
