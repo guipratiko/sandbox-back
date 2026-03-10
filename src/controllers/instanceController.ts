@@ -7,7 +7,7 @@ import { requestEvolutionAPI } from '../utils/evolutionAPI';
 import { getIO } from '../socket/socketServer';
 import { AuthRequest } from '../middleware/auth';
 import { validateAndConvertUserId } from '../utils/helpers';
-import { WEBHOOK_CONFIG, EVOLUTION_CONFIG, getPlanLimits, META_OAUTH_CONFIG } from '../config/constants';
+import { WEBHOOK_CONFIG, EVOLUTION_CONFIG, getPlanLimits, META_OAUTH_CONFIG, OFFICIAL_API_CLERKY_URL, OFFICIAL_API_CLERKY_API_KEY } from '../config/constants';
 import { createValidationError, createNotFoundError, createForbiddenError, handleControllerError } from '../utils/errorHelpers';
 import User from '../models/User';
 import { formatInstanceResponse } from '../utils/instanceFormatters';
@@ -454,6 +454,130 @@ export const registerOfficialPhone = async (
       return next(createValidationError(msg || 'Falha ao registrar número na Meta'));
     }
     return next(handleControllerError(error, 'Erro ao registrar número'));
+  }
+};
+
+/**
+ * Helper: chama OficialAPI-Clerky com x-api-key
+ */
+async function callOficialAPI<T>(
+  method: 'GET' | 'PATCH',
+  path: string,
+  body?: object
+): Promise<T> {
+  const baseUrl = OFFICIAL_API_CLERKY_URL.replace(/\/$/, '');
+  const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+  if (OFFICIAL_API_CLERKY_API_KEY) headers['x-api-key'] = OFFICIAL_API_CLERKY_API_KEY;
+  const config: { method: 'GET' | 'PATCH'; url: string; headers: Record<string, string>; data?: object } = {
+    method,
+    url: `${baseUrl}${path}`,
+    headers,
+  };
+  if (body && method === 'PATCH') config.data = body;
+  const res = await axios.request<{ status: string; data?: T; message?: string }>(config);
+  if (res.data?.status === 'error') {
+    throw new Error(res.data.message || 'Erro na API Oficial');
+  }
+  return (res.data as { data?: T })?.data as T;
+}
+
+/**
+ * GET perfil WhatsApp Business da instância oficial (repasse para OficialAPI-Clerky)
+ */
+export const getWhatsAppProfile = async (
+  req: AuthRequest,
+  res: Response,
+  next: NextFunction
+): Promise<void> => {
+  try {
+    const userId = req.user?.id;
+    const userObjectId = validateAndConvertUserId(userId);
+    const { id } = req.params;
+
+    const instance = await Instance.findOne({ _id: id, userId: userObjectId });
+    if (!instance) return next(createNotFoundError('Instância'));
+    if (instance.integration !== 'WHATSAPP-CLOUD') {
+      return next(createValidationError('Apenas instâncias da API Oficial'));
+    }
+    const phone_number_id = instance.phone_number_id || (instance as any).instanceId;
+    if (!phone_number_id) return next(createValidationError('Instância sem phone_number_id'));
+
+    const data = await callOficialAPI<Record<string, unknown>>(
+      'GET',
+      `/api/phone/${phone_number_id}/profile`
+    );
+    res.status(200).json({ status: 'success', data: data ?? {} });
+  } catch (error: unknown) {
+    if (axios.isAxiosError(error) && error.response?.data?.message) {
+      return next(createValidationError(error.response.data.message));
+    }
+    return next(handleControllerError(error, 'Erro ao buscar perfil WhatsApp'));
+  }
+};
+
+/**
+ * PATCH perfil WhatsApp Business (repasse para OficialAPI-Clerky)
+ */
+export const patchWhatsAppProfile = async (
+  req: AuthRequest,
+  res: Response,
+  next: NextFunction
+): Promise<void> => {
+  try {
+    const userId = req.user?.id;
+    const userObjectId = validateAndConvertUserId(userId);
+    const { id } = req.params;
+    const body = req.body as { about?: string; address?: string; description?: string; email?: string; vertical?: string; websites?: string[] };
+
+    const instance = await Instance.findOne({ _id: id, userId: userObjectId });
+    if (!instance) return next(createNotFoundError('Instância'));
+    if (instance.integration !== 'WHATSAPP-CLOUD') {
+      return next(createValidationError('Apenas instâncias da API Oficial'));
+    }
+    const phone_number_id = instance.phone_number_id || (instance as any).instanceId;
+    if (!phone_number_id) return next(createValidationError('Instância sem phone_number_id'));
+
+    await callOficialAPI('PATCH', `/api/phone/${phone_number_id}/profile`, body);
+    res.status(200).json({ status: 'success', message: 'Perfil atualizado' });
+  } catch (error: unknown) {
+    if (axios.isAxiosError(error) && error.response?.data?.message) {
+      return next(createValidationError(error.response.data.message));
+    }
+    return next(handleControllerError(error, 'Erro ao atualizar perfil WhatsApp'));
+  }
+};
+
+/**
+ * GET configurações do número (repasse para OficialAPI-Clerky)
+ */
+export const getWhatsAppSettings = async (
+  req: AuthRequest,
+  res: Response,
+  next: NextFunction
+): Promise<void> => {
+  try {
+    const userId = req.user?.id;
+    const userObjectId = validateAndConvertUserId(userId);
+    const { id } = req.params;
+
+    const instance = await Instance.findOne({ _id: id, userId: userObjectId });
+    if (!instance) return next(createNotFoundError('Instância'));
+    if (instance.integration !== 'WHATSAPP-CLOUD') {
+      return next(createValidationError('Apenas instâncias da API Oficial'));
+    }
+    const phone_number_id = instance.phone_number_id || (instance as any).instanceId;
+    if (!phone_number_id) return next(createValidationError('Instância sem phone_number_id'));
+
+    const data = await callOficialAPI<Record<string, unknown>>(
+      'GET',
+      `/api/phone/${phone_number_id}/settings`
+    );
+    res.status(200).json({ status: 'success', data: data ?? {} });
+  } catch (error: unknown) {
+    if (axios.isAxiosError(error) && error.response?.data?.message) {
+      return next(createValidationError(error.response.data.message));
+    }
+    return next(handleControllerError(error, 'Erro ao buscar configurações do número'));
   }
 };
 

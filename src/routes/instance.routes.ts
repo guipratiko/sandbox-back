@@ -7,6 +7,9 @@ import {
   getInstance,
   updateInstanceSettings,
   deleteInstance,
+  getWhatsAppProfile,
+  patchWhatsAppProfile,
+  getWhatsAppSettings,
 } from '../controllers/instanceController';
 import { protect, requirePremium } from '../middleware/auth';
 import { validateCreateInstance, validateInstanceId } from '../middleware/validators';
@@ -21,6 +24,9 @@ router.post('/:id/register-phone', validateInstanceId, registerOfficialPhone);
 router.post('/', validateCreateInstance, createInstance);
 router.get('/', getInstances);
 router.get('/:id', validateInstanceId, getInstance);
+router.get('/:id/whatsapp-profile', validateInstanceId, getWhatsAppProfile);
+router.patch('/:id/whatsapp-profile', validateInstanceId, patchWhatsAppProfile);
+router.get('/:id/whatsapp-settings', validateInstanceId, getWhatsAppSettings);
 router.put('/:id/settings', validateInstanceId, updateInstanceSettings);
 router.delete('/:id', validateInstanceId, deleteInstance);
 
