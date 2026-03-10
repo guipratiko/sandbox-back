@@ -1,6 +1,8 @@
 import { Response, NextFunction } from 'express';
 import mongoose from 'mongoose';
 import axios from 'axios';
+import multer from 'multer';
+import FormData from 'form-data';
 import Instance from '../models/Instance';
 import { generateInstanceName } from '../utils/instanceGenerator';
 import { requestEvolutionAPI } from '../utils/evolutionAPI';
@@ -578,6 +580,61 @@ export const getWhatsAppSettings = async (
       return next(createValidationError(error.response.data.message));
     }
     return next(handleControllerError(error, 'Erro ao buscar configurações do número'));
+  }
+};
+
+const uploadProfilePictureStorage = multer.memoryStorage();
+export const uploadWhatsAppProfilePictureImage = multer({
+  storage: uploadProfilePictureStorage,
+  limits: { fileSize: 5 * 1024 * 1024 },
+}).single('file');
+
+/**
+ * POST foto do perfil WhatsApp (multipart 'file'); repasse para OficialAPI-Clerky
+ */
+export const uploadWhatsAppProfilePicture = async (
+  req: AuthRequest,
+  res: Response,
+  next: NextFunction
+): Promise<void> => {
+  try {
+    const userId = req.user?.id;
+    const userObjectId = validateAndConvertUserId(userId);
+    const { id } = req.params;
+    const file = req.file as Express.Multer.File | undefined;
+    if (!file?.buffer) {
+      return next(createValidationError('Envie uma imagem (campo "file")'));
+    }
+    const instance = await Instance.findOne({ _id: id, userId: userObjectId });
+    if (!instance) return next(createNotFoundError('Instância'));
+    if (instance.integration !== 'WHATSAPP-CLOUD') {
+      return next(createValidationError('Apenas instâncias da API Oficial'));
+    }
+    const phone_number_id = instance.phone_number_id || (instance as any).instanceId;
+    if (!phone_number_id) return next(createValidationError('Instância sem phone_number_id'));
+
+    const baseUrl = OFFICIAL_API_CLERKY_URL.replace(/\/$/, '');
+    const form = new FormData();
+    form.append('file', file.buffer, {
+      filename: file.originalname || 'profile.jpg',
+      contentType: file.mimetype,
+    });
+    const headers: Record<string, string> = form.getHeaders() as Record<string, string>;
+    if (OFFICIAL_API_CLERKY_API_KEY) headers['x-api-key'] = OFFICIAL_API_CLERKY_API_KEY;
+    const apiRes = await axios.post(
+      `${baseUrl}/api/phone/${phone_number_id}/profile-picture`,
+      form,
+      { headers, maxBodyLength: Infinity, maxContentLength: Infinity, timeout: 60000 }
+    );
+    if (apiRes.data?.status === 'error') {
+      return next(createValidationError(apiRes.data.message || 'Erro ao atualizar foto'));
+    }
+    res.status(200).json({ status: 'success', message: 'Foto do perfil atualizada' });
+  } catch (error: unknown) {
+    if (axios.isAxiosError(error) && error.response?.data?.message) {
+      return next(createValidationError(error.response.data.message));
+    }
+    return next(handleControllerError(error, 'Erro ao atualizar foto do perfil'));
   }
 };
 
