@@ -279,6 +279,10 @@ export const sendAudio = async (
     const evolutionResponse = await sendMessageAdapter(instance, {
       number: contact.remoteJid,
       audio: uploadResult.fullUrl,
+      ...(instance.integration === 'WHATSAPP-CLOUD' && {
+        audio_base64: file.buffer.toString('base64'),
+        audio_mimetype: file.mimetype,
+      }),
     });
     const sentMessageId = extractMessageId(evolutionResponse);
 

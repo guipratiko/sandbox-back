@@ -18,6 +18,10 @@ export interface SendMessagePayload {
   image?: string;
   video?: string;
   audio?: string;
+  /** Base64 do áudio (prioridade sobre audio URL quando API oficial); evita download pela OficialAPI */
+  audio_base64?: string;
+  /** Mimetype do áudio quando enviado em audio_base64 (ex: audio/ogg, audio/webm) */
+  audio_mimetype?: string;
   document?: string;
   caption?: string;
   fileName?: string;
@@ -47,6 +51,8 @@ export async function sendMessage(
         image: payload.image,
         video: payload.video,
         audio: payload.audio,
+        audio_base64: payload.audio_base64,
+        audio_mimetype: payload.audio_mimetype,
         document: payload.document,
         caption: payload.caption,
         fileName: payload.fileName,
