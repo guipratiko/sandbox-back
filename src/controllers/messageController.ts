@@ -276,17 +276,10 @@ export const sendAudio = async (
       return next(createValidationError('Erro ao fazer upload do áudio'));
     }
 
-    const isOfficial = instance.integration === 'WHATSAPP-CLOUD';
-    const payload: Parameters<typeof sendMessageAdapter>[1] = {
+    const evolutionResponse = await sendMessageAdapter(instance, {
       number: contact.remoteJid,
       audio: uploadResult.fullUrl,
-    };
-    if (isOfficial) {
-      payload.audio_base64 = file.buffer.toString('base64');
-      payload.audio_mimetype = file.mimetype;
-      console.log('[CRM sendAudio] API Oficial: enviando áudio em base64', { size: file.buffer.length, mime: file.mimetype });
-    }
-    const evolutionResponse = await sendMessageAdapter(instance, payload);
+    });
     const sentMessageId = extractMessageId(evolutionResponse);
 
     // Criar registro da mensagem no PostgreSQL
