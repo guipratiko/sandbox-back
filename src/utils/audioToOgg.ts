@@ -6,10 +6,24 @@ import fs from 'fs/promises';
 import path from 'path';
 import os from 'os';
 import ffmpeg from 'fluent-ffmpeg';
-// eslint-disable-next-line @typescript-eslint/no-require-imports
-const ffmpegStatic = require('ffmpeg-static') as string | undefined;
-if (ffmpegStatic) {
-  ffmpeg.setFfmpegPath(ffmpegStatic);
+
+/** ffmpeg-static v2 exporta { path: string }, não a string diretamente */
+function getFfmpegPath(): string | undefined {
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const mod = require('ffmpeg-static') as { path?: string; default?: string } | string;
+    if (typeof mod === 'string') return mod;
+    if (mod?.path && typeof mod.path === 'string') return mod.path;
+    if (mod?.default && typeof mod.default === 'string') return mod.default;
+    return undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+const ffmpegPath = getFfmpegPath();
+if (ffmpegPath) {
+  ffmpeg.setFfmpegPath(ffmpegPath);
 }
 
 const OGG_MIME = 'audio/ogg';
