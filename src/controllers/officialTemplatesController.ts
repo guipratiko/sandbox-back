@@ -25,8 +25,8 @@ async function callOficialTemplates<T>(
     method,
     url: `${BASE}${path}`,
     headers,
-    data: method !== 'GET' ? data : undefined,
-    params: method === 'GET' ? params : undefined,
+    data: method !== 'GET' && method !== 'DELETE' ? data : undefined,
+    params: params ?? undefined,
     timeout: 30000,
   });
   if (res.data?.status === 'error') {
