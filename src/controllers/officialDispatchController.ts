@@ -6,11 +6,13 @@ import { Response, NextFunction } from 'express';
 import axios from 'axios';
 import mongoose from 'mongoose';
 import Instance from '../models/Instance';
+import User from '../models/User';
 import OfficialDispatchUsage from '../models/OfficialDispatchUsage';
 import { AuthRequest } from '../middleware/auth';
 import { validateAndConvertUserId } from '../utils/helpers';
 import { OFFICIAL_API_CLERKY_URL, OFFICIAL_API_CLERKY_API_KEY } from '../config/constants';
 import { createNotFoundError, createValidationError, handleControllerError } from '../utils/errorHelpers';
+import { pgPool } from '../config/databases';
 
 const BASE = (OFFICIAL_API_CLERKY_URL || '').replace(/\/$/, '');
 
@@ -25,10 +27,16 @@ function tierToNumber(tier?: string): number {
   return k ? num * 1000 : num;
 }
 
-/** Data atual em YYYY-MM-DD (UTC). */
-function todayKey(): string {
-  const d = new Date();
-  return d.toISOString().slice(0, 10);
+const DEFAULT_TIMEZONE = 'America/Sao_Paulo';
+
+/** Data atual em YYYY-MM-DD. Se timezone for passado, usa o dia local nesse fuso; senão UTC. */
+function todayKey(timezone?: string | null): string {
+  const tz = timezone && timezone.trim() ? timezone.trim() : 'UTC';
+  try {
+    return new Date().toLocaleDateString('en-CA', { timeZone: tz });
+  } catch {
+    return new Date().toISOString().slice(0, 10);
+  }
 }
 
 async function getInstanceOfficial(req: AuthRequest): Promise<{
@@ -53,23 +61,57 @@ async function getInstanceOfficial(req: AuthRequest): Promise<{
   };
 }
 
+/** Resposta do GET settings da OficialAPI: { status, data: { messaging_limit_tier?, ... } }. */
+function getTierFromSettingsResponse(settingsRes: { data?: { data?: { messaging_limit_tier?: string } } }): string | undefined {
+  return settingsRes.data?.data?.messaging_limit_tier;
+}
+
+/** Conta contatos distintos para os quais enviamos mensagem hoje pelo CRM (from_me = true), nesta instância. Dia "hoje" no timezone do usuário. */
+async function getCrmSentDistinctToday(
+  instanceId: mongoose.Types.ObjectId,
+  userTimezone: string,
+  todayLocal: string
+): Promise<number> {
+  const res = await pgPool.query<{ count: string }>(
+    `SELECT COUNT(DISTINCT contact_id)::text AS count
+     FROM messages
+     WHERE instance_id = $1 AND from_me = true
+       AND (created_at AT TIME ZONE $2)::date = $3::date`,
+    [instanceId.toString(), userTimezone, todayLocal]
+  );
+  const n = parseInt(res.rows[0]?.count ?? '0', 10);
+  return isNaN(n) ? 0 : n;
+}
+
+/** Obtém timezone do usuário (perfil) ou padrão. */
+async function getUserTimezone(userId: string | undefined): Promise<string> {
+  if (!userId) return DEFAULT_TIMEZONE;
+  const user = await User.findById(validateAndConvertUserId(userId)).select('timezone').lean();
+  const tz = (user as { timezone?: string } | null)?.timezone;
+  return (tz && tz.trim()) ? tz.trim() : DEFAULT_TIMEZONE;
+}
+
 /** GET /instances/:id/official-dispatch-quota — cota disponível (tier - usado hoje). */
 export const getOfficialDispatchQuota = async (req: AuthRequest, res: Response, next: NextFunction): Promise<void> => {
   try {
     const { instanceId, phone_number_id } = await getInstanceOfficial(req);
+    const userTimezone = await getUserTimezone(req.user?.id);
+    const date = todayKey(userTimezone);
+
     const headers: Record<string, string> = { 'Content-Type': 'application/json' };
     if (OFFICIAL_API_CLERKY_API_KEY) headers['x-api-key'] = OFFICIAL_API_CLERKY_API_KEY;
 
-    const settingsRes = await axios.get<{ messaging_limit_tier?: string }>(`${BASE}/api/phone/${phone_number_id}/settings`, {
+    const settingsRes = await axios.get(`${BASE}/api/phone/${phone_number_id}/settings`, {
       headers,
       timeout: 15000,
     });
-    const tier = settingsRes.data?.messaging_limit_tier;
+    const tier = getTierFromSettingsResponse(settingsRes);
     const tierNumber = tierToNumber(tier);
 
-    const date = todayKey();
     const usageDoc = await OfficialDispatchUsage.findOne({ instanceId, date });
-    const usedToday = usageDoc?.count ?? 0;
+    const dispatchUsed = usageDoc?.count ?? 0;
+    const crmSentToday = await getCrmSentDistinctToday(instanceId, userTimezone, date);
+    const usedToday = dispatchUsed + crmSentToday;
     const remaining = Math.max(0, tierNumber - usedToday);
 
     res.status(200).json({
@@ -111,14 +153,18 @@ export const sendOfficialDispatches = async (req: AuthRequest, res: Response, ne
     const headers: Record<string, string> = { 'Content-Type': 'application/json' };
     if (OFFICIAL_API_CLERKY_API_KEY) headers['x-api-key'] = OFFICIAL_API_CLERKY_API_KEY;
 
-    const settingsRes = await axios.get<{ messaging_limit_tier?: string }>(`${BASE}/api/phone/${phone_number_id}/settings`, {
+    const settingsRes = await axios.get(`${BASE}/api/phone/${phone_number_id}/settings`, {
       headers,
       timeout: 15000,
     });
-    const tierNumber = tierToNumber(settingsRes.data?.messaging_limit_tier);
-    const date = todayKey();
+    const tier = getTierFromSettingsResponse(settingsRes);
+    const tierNumber = tierToNumber(tier);
+    const userTimezone = await getUserTimezone(req.user?.id);
+    const date = todayKey(userTimezone);
     const usageDoc = await OfficialDispatchUsage.findOne({ instanceId, date });
-    const usedToday = usageDoc?.count ?? 0;
+    const dispatchUsed = usageDoc?.count ?? 0;
+    const crmSentToday = await getCrmSentDistinctToday(instanceId, userTimezone, date);
+    const usedToday = dispatchUsed + crmSentToday;
     const remaining = Math.max(0, tierNumber - usedToday);
 
     if (recipients.length > remaining) {
@@ -130,7 +176,7 @@ export const sendOfficialDispatches = async (req: AuthRequest, res: Response, ne
     }
 
     const results: { to: string; success: boolean; messageId?: string; error?: string }[] = [];
-    let newCount = usedToday;
+    let newDispatchCount = dispatchUsed;
 
     for (const r of recipients) {
       const to = String(r?.to ?? '').trim();
@@ -163,7 +209,7 @@ export const sendOfficialDispatches = async (req: AuthRequest, res: Response, ne
 
         const messageId = sendRes.data?.data?.messageId;
         results.push({ to, success: true, messageId });
-        newCount += 1;
+        newDispatchCount += 1;
       } catch (err) {
         const msg = axios.isAxiosError(err) && err.response?.data?.message ? err.response.data.message : (err as Error).message;
         results.push({ to, success: false, error: msg });
@@ -172,7 +218,7 @@ export const sendOfficialDispatches = async (req: AuthRequest, res: Response, ne
 
     await OfficialDispatchUsage.findOneAndUpdate(
       { instanceId, date },
-      { $set: { count: newCount }, $setOnInsert: { instanceId, date, count: newCount } },
+      { $set: { count: newDispatchCount }, $setOnInsert: { instanceId, date, count: newDispatchCount } },
       { upsert: true, new: true }
     );
 
