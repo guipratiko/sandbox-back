@@ -116,14 +116,13 @@ export const updateOfficialTemplate = async (req: AuthRequest, res: Response, ne
   }
 };
 
-/** DELETE /instances/:id/official-templates?name=xxx */
+/** DELETE /instances/:id/official-templates?name=xxx — usa token de sistema no Clerky (delete exige permissão WABA). */
 export const deleteOfficialTemplate = async (req: AuthRequest, res: Response, next: NextFunction): Promise<void> => {
   try {
-    const { waba_id, access_token } = await getInstanceAndWaba(req);
+    const { waba_id } = await getInstanceAndWaba(req);
     const name = (req.query.name as string)?.trim();
     if (!name) return next(createValidationError('Parâmetro name é obrigatório'));
     const params: Record<string, string> = { waba_id, name };
-    if (access_token) params.access_token = access_token;
     await callOficialTemplates('DELETE', '/api/templates', undefined, params);
     res.status(200).json({ status: 'success', message: 'Template excluído' });
   } catch (error: unknown) {
