@@ -116,14 +116,20 @@ export const updateOfficialTemplate = async (req: AuthRequest, res: Response, ne
   }
 };
 
-/** DELETE /instances/:id/official-templates?name=xxx — envia token da instância (dono da WABA) para o Clerky. */
+/** DELETE /instances/:id/official-templates?name=xxx — exige token da instância (dono da WABA); Meta não aceita System User para delete em WABA do cliente. */
 export const deleteOfficialTemplate = async (req: AuthRequest, res: Response, next: NextFunction): Promise<void> => {
   try {
     const { waba_id, access_token } = await getInstanceAndWaba(req);
     const name = (req.query.name as string)?.trim();
     if (!name) return next(createValidationError('Parâmetro name é obrigatório'));
-    const params: Record<string, string> = { waba_id, name };
-    if (access_token) params.access_token = access_token;
+    if (!access_token || !access_token.trim()) {
+      return next(
+        createValidationError(
+          'Esta instância não possui token de acesso salvo. Reconecte o número WhatsApp (desvincule e vincule de novo) para poder excluir templates.'
+        )
+      );
+    }
+    const params: Record<string, string> = { waba_id, name, access_token: access_token.trim() };
     await callOficialTemplates('DELETE', '/api/templates', undefined, params);
     res.status(200).json({ status: 'success', message: 'Template excluído' });
   } catch (error: unknown) {
