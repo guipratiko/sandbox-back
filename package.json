@@ -22,6 +22,7 @@
     "send-promo-api": "ts-node-dev --transpile-only src/scripts/sendPromoViaAPI.ts",
     "send-promo-android": "ts-node-dev --transpile-only src/scripts/sendPromoAndroid.ts",
     "check-devices": "ts-node-dev --transpile-only src/scripts/checkDeviceTokens.ts",
+    "fix-official-token": "ts-node --transpile-only src/scripts/fixOfficialInstanceToken.ts",
     "kill": "bash scripts/kill-server.sh"
   },
   "keywords": [
