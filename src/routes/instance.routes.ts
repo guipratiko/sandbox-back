@@ -20,6 +20,7 @@ import {
   updateOfficialTemplate,
   deleteOfficialTemplate,
 } from '../controllers/officialTemplatesController';
+import { getOfficialDispatchQuota, sendOfficialDispatches } from '../controllers/officialDispatchController';
 import { protect, requirePremium } from '../middleware/auth';
 import { validateCreateInstance, validateInstanceId } from '../middleware/validators';
 
@@ -42,6 +43,8 @@ router.post('/:id/official-templates', validateInstanceId, createOfficialTemplat
 router.get('/:id/official-templates/:templateId', validateInstanceId, getOfficialTemplate);
 router.post('/:id/official-templates/:templateId', validateInstanceId, updateOfficialTemplate);
 router.delete('/:id/official-templates', validateInstanceId, deleteOfficialTemplate);
+router.get('/:id/official-dispatch-quota', validateInstanceId, getOfficialDispatchQuota);
+router.post('/:id/official-dispatches', validateInstanceId, sendOfficialDispatches);
 router.put('/:id/settings', validateInstanceId, updateInstanceSettings);
 router.delete('/:id', validateInstanceId, deleteInstance);
 
