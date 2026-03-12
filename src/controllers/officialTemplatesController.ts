@@ -72,7 +72,7 @@ export const createOfficialTemplate = async (req: AuthRequest, res: Response, ne
     const { waba_id, access_token } = await getInstanceAndWaba(req);
     const body = { ...req.body, waba_id } as Record<string, unknown>;
     if (access_token) body.access_token = access_token;
-    const data = await callOficialTemplates<{ id: string }>('POST', '/api/templates', body);
+    const data = await callOficialTemplates<{ id: string; templateStatus?: string }>('POST', '/api/templates', body);
     res.status(200).json({ status: 'success', data: data ?? {} });
   } catch (error: unknown) {
     if (axios.isAxiosError(error) && error.response?.data?.message) {
