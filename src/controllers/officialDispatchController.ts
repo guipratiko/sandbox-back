@@ -241,7 +241,7 @@ export const sendOfficialDispatches = async (req: AuthRequest, res: Response, ne
 
     await OfficialDispatchUsage.findOneAndUpdate(
       { instanceId, date },
-      { $set: { count: newDispatchCount }, $setOnInsert: { instanceId, date, count: newDispatchCount } },
+      { $set: { count: newDispatchCount }, $setOnInsert: { instanceId, date } },
       { upsert: true, new: true }
     );
 
