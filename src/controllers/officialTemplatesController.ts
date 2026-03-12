@@ -116,11 +116,12 @@ export const updateOfficialTemplate = async (req: AuthRequest, res: Response, ne
   }
 };
 
-/** DELETE /instances/:id/official-templates?name=xxx — exige token da instância (dono da WABA); Meta não aceita System User para delete em WABA do cliente. */
+/** DELETE /instances/:id/official-templates?name=xxx&hsm_id=yyy — exige token da instância. hsm_id opcional (exclui só esse template). */
 export const deleteOfficialTemplate = async (req: AuthRequest, res: Response, next: NextFunction): Promise<void> => {
   try {
     const { waba_id, access_token } = await getInstanceAndWaba(req);
     const name = (req.query.name as string)?.trim();
+    const hsm_id = (req.query.hsm_id as string)?.trim();
     if (!name) return next(createValidationError('Parâmetro name é obrigatório'));
     if (!access_token || !access_token.trim()) {
       return next(
@@ -130,6 +131,7 @@ export const deleteOfficialTemplate = async (req: AuthRequest, res: Response, ne
       );
     }
     const params: Record<string, string> = { waba_id, name, access_token: access_token.trim() };
+    if (hsm_id) params.hsm_id = hsm_id;
     await callOficialTemplates('DELETE', '/api/templates', undefined, params);
     res.status(200).json({ status: 'success', message: 'Template excluído' });
   } catch (error: unknown) {
