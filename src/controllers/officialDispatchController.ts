@@ -66,29 +66,47 @@ function getTierFromSettingsResponse(settingsRes: { data?: { data?: { messaging_
   return settingsRes.data?.data?.messaging_limit_tier;
 }
 
-/** Conta contatos distintos para os quais enviamos mensagem hoje pelo CRM (from_me = true), nesta instância. Dia "hoje" no timezone do usuário. */
+/** Conta contatos distintos para os quais enviamos mensagem hoje pelo CRM (from_me = true), nesta instância. Dia "hoje" no timezone do usuário; se a query com TZ falhar, usa UTC. */
 async function getCrmSentDistinctToday(
   instanceId: mongoose.Types.ObjectId,
   userTimezone: string,
   todayLocal: string
 ): Promise<number> {
-  const res = await pgPool.query<{ count: string }>(
-    `SELECT COUNT(DISTINCT contact_id)::text AS count
-     FROM messages
-     WHERE instance_id = $1 AND from_me = true
-       AND (created_at AT TIME ZONE $2)::date = $3::date`,
-    [instanceId.toString(), userTimezone, todayLocal]
-  );
-  const n = parseInt(res.rows[0]?.count ?? '0', 10);
-  return isNaN(n) ? 0 : n;
+  try {
+    const res = await pgPool.query<{ count: string }>(
+      `SELECT COUNT(DISTINCT contact_id)::text AS count
+       FROM messages
+       WHERE instance_id = $1 AND from_me = true
+         AND (created_at AT TIME ZONE $2)::date = $3::date`,
+      [instanceId.toString(), userTimezone, todayLocal]
+    );
+    const n = parseInt(res.rows[0]?.count ?? '0', 10);
+    return isNaN(n) ? 0 : n;
+  } catch (err) {
+    console.warn('[officialDispatch] getCrmSentDistinctToday with TZ failed, falling back to UTC:', (err as Error).message);
+    const start = `${todayLocal}T00:00:00.000Z`;
+    const end = `${todayLocal}T23:59:59.999Z`;
+    const res = await pgPool.query<{ count: string }>(
+      `SELECT COUNT(DISTINCT contact_id)::text AS count
+       FROM messages
+       WHERE instance_id = $1 AND from_me = true AND created_at >= $2::timestamptz AND created_at <= $3::timestamptz`,
+      [instanceId.toString(), start, end]
+    );
+    const n = parseInt(res.rows[0]?.count ?? '0', 10);
+    return isNaN(n) ? 0 : n;
+  }
 }
 
-/** Obtém timezone do usuário (perfil) ou padrão. */
+/** Obtém timezone do usuário (perfil) ou padrão. Nunca lança. */
 async function getUserTimezone(userId: string | undefined): Promise<string> {
   if (!userId) return DEFAULT_TIMEZONE;
-  const user = await User.findById(validateAndConvertUserId(userId)).select('timezone').lean();
-  const tz = (user as { timezone?: string } | null)?.timezone;
-  return (tz && tz.trim()) ? tz.trim() : DEFAULT_TIMEZONE;
+  try {
+    const user = await User.findById(validateAndConvertUserId(userId)).select('timezone').lean();
+    const tz = (user as { timezone?: string } | null)?.timezone;
+    return (tz && tz.trim()) ? tz.trim() : DEFAULT_TIMEZONE;
+  } catch {
+    return DEFAULT_TIMEZONE;
+  }
 }
 
 /** GET /instances/:id/official-dispatch-quota — cota disponível (tier - usado hoje). */
@@ -156,7 +174,12 @@ export const sendOfficialDispatches = async (req: AuthRequest, res: Response, ne
     const settingsRes = await axios.get(`${BASE}/api/phone/${phone_number_id}/settings`, {
       headers,
       timeout: 15000,
+      validateStatus: () => true,
     });
+    if (settingsRes.status !== 200) {
+      const msg = (settingsRes.data as { message?: string })?.message || `Configurações do número: ${settingsRes.status}`;
+      return next(createValidationError(msg));
+    }
     const tier = getTierFromSettingsResponse(settingsRes);
     const tierNumber = tierToNumber(tier);
     const userTimezone = await getUserTimezone(req.user?.id);
@@ -235,6 +258,7 @@ export const sendOfficialDispatches = async (req: AuthRequest, res: Response, ne
       },
     });
   } catch (error: unknown) {
+    console.error('[officialDispatch] sendOfficialDispatches error:', error);
     if (axios.isAxiosError(error) && error.response?.data?.message) {
       return next(createValidationError(error.response.data.message));
     }
