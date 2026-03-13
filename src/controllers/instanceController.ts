@@ -40,6 +40,8 @@ interface CreateOfficialInstanceBody {
   redirect_uri?: string;
   waba_id: string;
   phone_number_id: string;
+  /** Coexistence: onboarding via WhatsApp Business App (conectar conta existente) */
+  is_coex?: boolean;
 }
 
 // Tipo para instância do MongoDB (lean) - usando Record para flexibilidade
@@ -244,7 +246,7 @@ export const createOfficialInstance = async (
   try {
     const userId = req.user?.id;
     const userObjectId = validateAndConvertUserId(userId);
-    const { name, code, redirect_uri, waba_id, phone_number_id }: CreateOfficialInstanceBody = req.body;
+    const { name, code, redirect_uri, waba_id, phone_number_id, is_coex }: CreateOfficialInstanceBody = req.body;
 
     if (!name || name.trim().length < 3) {
       return next(createValidationError('Nome deve ter no mínimo 3 caracteres'));
@@ -344,6 +346,7 @@ export const createOfficialInstance = async (
       waba_id,
       display_phone_number: display_phone_number || undefined,
       meta_access_token: accessToken !== META_OAUTH_CONFIG.SYSTEM_USER_TOKEN ? accessToken : undefined,
+      is_coex: !!is_coex,
     });
 
     await instance.save();
@@ -362,6 +365,30 @@ export const createOfficialInstance = async (
         // Já inscrito ou outro motivo; não falha a criação da instância
         console.warn('[WhatsApp Oficial] subscribed_apps (inscrição na WABA):', subErr instanceof Error ? subErr.message : subErr);
       }
+    }
+
+    // Coex: iniciar sincronização de contatos e histórico (em até 24h). Não bloqueia a resposta.
+    if (is_coex && phone_number_id && accessToken && accessToken !== META_OAUTH_CONFIG.SYSTEM_USER_TOKEN) {
+      const token = accessToken;
+      (async () => {
+        try {
+          const base = 'https://graph.facebook.com/v21.0';
+          await axios.post(
+            `${base}/${phone_number_id}/smb_app_data`,
+            { messaging_product: 'whatsapp', sync_type: 'smb_app_state_sync' },
+            { headers: { 'Content-Type': 'application/json' }, params: { access_token: token }, timeout: 15000 }
+          );
+          console.log('[WhatsApp Oficial] Coex: smb_app_state_sync iniciado', { phone_number_id });
+          await axios.post(
+            `${base}/${phone_number_id}/smb_app_data`,
+            { messaging_product: 'whatsapp', sync_type: 'history' },
+            { headers: { 'Content-Type': 'application/json' }, params: { access_token: token }, timeout: 15000 }
+          );
+          console.log('[WhatsApp Oficial] Coex: history sync iniciado', { phone_number_id });
+        } catch (err) {
+          console.warn('[WhatsApp Oficial] Coex: falha ao iniciar sync', err instanceof Error ? err.message : err);
+        }
+      })();
     }
 
     try {

@@ -37,6 +37,8 @@ export interface IInstance extends Document {
   waba_id?: string;
   display_phone_number?: string;
   meta_access_token?: string;
+  /** Coexistence: número conectado via WhatsApp Business App (app + API) */
+  is_coex?: boolean;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -155,6 +157,7 @@ const InstanceSchema: Schema = new Schema(
     waba_id: { type: String, default: null },
     display_phone_number: { type: String, default: null },
     meta_access_token: { type: String, default: null },
+    is_coex: { type: Boolean, default: false },
   },
   {
     timestamps: true,

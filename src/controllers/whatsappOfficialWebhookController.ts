@@ -8,6 +8,9 @@ import { META_OAUTH_CONFIG } from '../config/constants';
 import { normalizeMetaWebhookToEvolutionFormat } from '../utils/metaWebhookNormalizer';
 import { fetchMetaMediaAndUploadToMidiaService } from '../utils/mediaService';
 import { handleMessagesUpsert } from './webhookController';
+import { ContactService } from '../services/contactService';
+import { CRMColumnService } from '../services/crmColumnService';
+import { formatWhatsAppPhone } from '../utils/formatters';
 
 /** Mensagem no formato normalizado (metaWebhookNormalizer), com campos opcionais de mídia */
 interface NormalizedMessage {
@@ -44,7 +47,8 @@ export async function receiveWebhook(req: Request, res: Response): Promise<void>
     }
 
     const normalized = normalizeMetaWebhookToEvolutionFormat(body as Parameters<typeof normalizeMetaWebhookToEvolutionFormat>[0]);
-    for (const { phone_number_id, eventData } of normalized) {
+    for (const item of normalized) {
+      const { phone_number_id } = item;
       const instance = await Instance.findOne({
         phone_number_id,
         integration: 'WHATSAPP-CLOUD',
@@ -53,6 +57,35 @@ export async function receiveWebhook(req: Request, res: Response): Promise<void>
         console.log('[WhatsApp Oficial] Nenhuma instância encontrada para phone_number_id:', phone_number_id);
         continue;
       }
+
+      if ('contactsSync' in item) {
+        const userId = instance.userId?.toString();
+        if (!userId) continue;
+        const columns = await CRMColumnService.initializeColumns(userId);
+        const firstColumn = columns.find((c) => c.orderIndex === 0);
+        const columnId = firstColumn?.id ?? null;
+        for (const c of item.contactsSync) {
+          const remoteJid = `${c.wa_id}@s.whatsapp.net`;
+          const phone = formatWhatsAppPhone(remoteJid);
+          try {
+            await ContactService.findOrCreate({
+              userId,
+              instanceId: instance._id.toString(),
+              remoteJid,
+              phone,
+              name: c.name || phone,
+              profilePicture: null,
+              columnId,
+            });
+          } catch (err) {
+            console.warn('[WhatsApp Oficial] Coex contactsSync: falha ao upsert contato', c.wa_id, err);
+          }
+        }
+        console.log('[WhatsApp Oficial] Coex contactsSync processado', { phone_number_id, count: item.contactsSync.length });
+        continue;
+      }
+
+      const eventData = item.eventData;
       const token = (instance as any).meta_access_token || META_OAUTH_CONFIG.SYSTEM_USER_TOKEN;
       const messages = (eventData?.data?.messages ?? []) as NormalizedMessage[];
       for (const msg of messages) {

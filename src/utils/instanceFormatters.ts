@@ -29,6 +29,7 @@ export const formatInstanceResponse = (instance: InstanceLean) => {
     phone_number_id: (instance as any).phone_number_id ?? null,
     waba_id: (instance as any).waba_id ?? null,
     display_phone_number: displayPhone ?? null,
+    is_coex: (instance as any).is_coex ?? false,
     connectionLink,
     webhook: {
       url: instance.webhook?.url || '',
