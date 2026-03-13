@@ -50,7 +50,8 @@ async function run() {
     console.error('Nenhuma instância encontrada com esse _id.');
     if (official.length > 0) {
       console.error('IDs de instâncias oficiais (WHATSAPP-CLOUD) no banco:');
-      official.forEach((o: { _id: unknown; name?: string; waba_id?: string }) => console.error(`  ${o._id}  name=${o.name || '—'}  waba_id=${o.waba_id || '—'}`));
+      const list = official as Array<{ _id: unknown; name?: string; waba_id?: string }>;
+      list.forEach((o) => console.error(`  ${o._id}  name=${o.name || '—'}  waba_id=${o.waba_id || '—'}`));
     }
     await mongoose.connection.close();
     process.exit(1);
