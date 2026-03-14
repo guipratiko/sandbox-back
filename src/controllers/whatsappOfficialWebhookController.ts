@@ -38,8 +38,33 @@ export function verifyWebhook(req: Request, res: Response): void {
 export async function receiveWebhook(req: Request, res: Response): Promise<void> {
   try {
     const body = req.body as Record<string, unknown>;
-    const entries = (body.entry as unknown[])?.length ?? 0;
-    console.log('[WhatsApp Oficial] Webhook POST recebido', { object: body.object, entries });
+    const entries = body.entry as Array<{ id?: string; changes?: Array<{ field?: string; value?: Record<string, unknown> }> }> | undefined;
+    const entryList = Array.isArray(entries) ? entries : [];
+    console.log('[WhatsApp Oficial] Webhook POST recebido', { object: body.object, entries: entryList.length });
+
+    // Log dos tipos de evento (messages, statuses, etc.) para diagnóstico
+    for (const entry of entryList) {
+      const changes = entry.changes ?? [];
+      for (const ch of changes) {
+        const field = ch.field ?? '?';
+        const value = ch.value as Record<string, unknown> | undefined;
+        const phone_number_id = value?.metadata && typeof value.metadata === 'object' && value.metadata !== null && 'phone_number_id' in value.metadata
+          ? (value.metadata as { phone_number_id?: string }).phone_number_id
+          : undefined;
+        if (field === 'statuses' && Array.isArray(value?.statuses)) {
+          for (const st of value.statuses as Array<{ id?: string; status?: string; recipient_id?: string; timestamp?: string }>) {
+            console.log('[WhatsApp Oficial] Status de mensagem', {
+              messageId: st.id,
+              status: st.status,
+              recipient_id: st.recipient_id,
+              phone_number_id,
+            });
+          }
+        } else {
+          console.log('[WhatsApp Oficial] Evento recebido', { field, phone_number_id });
+        }
+      }
+    }
 
     if (body.object !== 'whatsapp_business_account') {
       res.status(200).json({ status: 'ok' });
