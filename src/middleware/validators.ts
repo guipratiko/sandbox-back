@@ -76,8 +76,8 @@ export const validateCreateInstance = [
     .withMessage('Nome da instância é obrigatório')
     .isLength({ min: 3, max: 50 })
     .withMessage('Nome da instância deve ter entre 3 e 50 caracteres')
-    .matches(/^[a-zA-Z0-9_-]+$/)
-    .withMessage('Nome da instância deve conter apenas letras, números, hífens e underscores')
+    .matches(/^[a-zA-Z0-9_\-\s]+$/)
+    .withMessage('Nome da instância deve conter apenas letras, números, espaços, hífens e underscores')
     .escape(),
   body('rejectCall')
     .optional()
