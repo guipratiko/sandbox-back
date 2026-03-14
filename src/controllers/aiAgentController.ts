@@ -190,7 +190,7 @@ export const updateAIAgent = async (
   try {
     const userId = req.user?.id;
     const { id } = req.params;
-    const { name, prompt, waitTime, isActive, transcribeAudio, agentType, assistedConfig, blockWhenUserReplies, blockDuration, blockDurationUnit } = req.body;
+    const { name, instanceId, prompt, waitTime, isActive, transcribeAudio, agentType, assistedConfig, blockWhenUserReplies, blockDuration, blockDurationUnit } = req.body;
 
     if (!userId) {
       return next(createValidationError('Usuário não autenticado'));
@@ -206,6 +206,7 @@ export const updateAIAgent = async (
 
     const updateData: any = {};
     if (name !== undefined) updateData.name = name.trim();
+    if (instanceId !== undefined) updateData.instanceId = instanceId === '' ? null : instanceId;
     if (prompt !== undefined) updateData.prompt = prompt;
     if (waitTime !== undefined) updateData.waitTime = waitTime;
     if (isActive !== undefined) updateData.isActive = isActive;

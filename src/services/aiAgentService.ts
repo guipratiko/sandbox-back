@@ -10,7 +10,7 @@ export type BlockDurationUnit = 'minutes' | 'hours' | 'days' | 'permanent';
 export interface AIAgent {
   id: string;
   userId: string;
-  instanceId: string;
+  instanceId: string | null;
   name: string;
   prompt: string;
   waitTime: number;
@@ -42,6 +42,7 @@ export interface CreateAIAgentData {
 
 export interface UpdateAIAgentData {
   name?: string;
+  instanceId?: string | null;
   prompt?: string;
   waitTime?: number;
   isActive?: boolean;
@@ -147,6 +148,11 @@ export class AIAgentService {
       values.push(data.name.trim());
     }
 
+    if (data.instanceId !== undefined) {
+      updates.push(`instance_id = $${paramCount++}`);
+      values.push(data.instanceId);
+    }
+
     if (data.prompt !== undefined) {
       updates.push(`prompt = $${paramCount++}`);
       values.push(data.prompt);
@@ -235,7 +241,7 @@ export class AIAgentService {
     return {
       id: row.id,
       userId: row.user_id,
-      instanceId: row.instance_id,
+      instanceId: row.instance_id ?? null,
       name: row.name,
       prompt: row.prompt,
       waitTime: row.wait_time,

@@ -95,6 +95,7 @@ async function runAllMigrations(): Promise<void> {
       '020_add_block_when_user_replies_to_ai_agents.sql',
       '021_create_ai_agent_media_and_locations.sql',
       '022_add_audio_to_ai_agent_media.sql',
+      '023_allow_ai_agents_instance_id_null.sql',
     ];
     
     for (const migration of migrations) {

@@ -845,8 +845,8 @@ export const deleteInstance = async (
         // 5. workflows
         await client.query('DELETE FROM workflows WHERE instance_id = $1', [instanceId]);
         
-        // 6. ai_agents
-        await client.query('DELETE FROM ai_agents WHERE instance_id = $1', [instanceId]);
+        // 6. ai_agents — desvincular em vez de deletar (agente fica suspenso até selecionar outra instância)
+        await client.query('UPDATE ai_agents SET instance_id = NULL WHERE instance_id = $1', [instanceId]);
         
         // 7. messages (depende de contacts - será deletado via CASCADE, mas deletamos diretamente por instance_id para garantir)
         await client.query('DELETE FROM messages WHERE instance_id = $1', [instanceId]);
